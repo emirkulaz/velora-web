@@ -1,17 +1,54 @@
 import { useRef, useState, type KeyboardEvent } from 'react'
+import { ApiError, apiRequest } from '../data/api'
 import { QUICK_COMMANDS } from '../data/demoData'
 
-interface DemoResponse {
+interface AssistantResponse {
   query: string
   content: string
   source: string
+  module?: string
+  intent?: string
   generatedAt: string
+  dateFrom?: string | null
+  dateTo?: string | null
+  disclaimer?: string
+}
+
+interface ErpChatResponse {
+  answer: string
+  intent?: string
+  module?: string
+  dateFrom: string | null
+  dateTo: string | null
+  generatedAt: string
+  dataFreshness: string
+  recordsUsed: number
+  dataSource?: string
+  disclaimer: string
+  writePreview?: {
+    applied: boolean
+    notice: string
+    preview: string
+  }
 }
 
 const COMMAND_PLACEHOLDER =
-  'Satışları özetle, sipariş oluştur veya stok durumunu sor...'
+  'Kasa, müşteri, stok, ürün veya üretim hakkında sorun...'
 
-function formatAlgiersTime(date: Date): string {
+const MODULE_LABELS: Record<string, string> = {
+  finance: 'Finans',
+  cash: 'Kasa',
+  customers: 'Müşteriler',
+  stock: 'Stok',
+  products: 'Ürünler',
+  warehouses: 'Depolar',
+  production: 'Üretim',
+  write_action: 'İşlem önizleme',
+  unsupported: 'Genel',
+}
+
+function formatAlgiersTime(value: string | Date): string {
+  const date = typeof value === 'string' ? new Date(value) : value
   return date.toLocaleString('tr-TR', {
     timeZone: 'Africa/Algiers',
     day: 'numeric',
@@ -22,67 +59,32 @@ function formatAlgiersTime(date: Date): string {
   })
 }
 
-function getDemoResponse(query: string): DemoResponse {
-  const normalized = query.toLowerCase().trim()
-  const generatedAt = formatAlgiersTime(new Date())
-
-  if (normalized.includes('üretim') && normalized.includes('özet')) {
-    return {
-      query,
-      content:
-        'Üretim özeti için henüz gerçek üretim kaydı bağlanmadı.\n\n' +
-        'TRIKOMEX üretim hatları ve günlük çıktı verisi geldiğinde burada gösterilecek.',
-      source: 'Üretim modülü · TRIKOMEX Textile',
-      generatedAt,
-    }
+function mapErrorMessage(error: unknown): string {
+  if (error instanceof TypeError) {
+    return 'Sunucuya bağlanılamadı. API veya ağ bağlantısını kontrol edin.'
   }
-
-  if (normalized.includes('stok') && normalized.includes('azal')) {
-    return {
-      query,
-      content:
-        'Kritik stok uyarısı için gerçek stok eşiği analizi henüz aktif değil.\n\n' +
-        'Stok modülündeki mevcut ürün miktarlarını kontrol edebilirsiniz.',
-      source: 'Stok modülü · TRIKOMEX Textile',
-      generatedAt,
-    }
+  if (!(error instanceof ApiError)) {
+    return 'Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin.'
   }
-
-  if (normalized.includes('sipariş') && normalized.includes('oluştur')) {
-    return {
-      query,
-      content:
-        'Yeni sipariş formu hazırlanabilir (henüz kaydedilmedi):\n\n' +
-        '• Müşteri: [Belirtilmedi — lütfen müşteri adını ekleyin]\n' +
-        '• Ürün: [Belirtilmedi — lütfen ürün seçin]\n' +
-        '• Miktar: [Belirtilmedi]\n' +
-        '• Birim fiyat: DZD cinsinden hesaplanacak\n\n' +
-        'Siparişi kaydetmek için onayınız gerekiyor.',
-      source: 'Sipariş modülü · TRIKOMEX Textile',
-      generatedAt,
-    }
+  if (error.status === 401) {
+    return 'Oturum süreniz dolmuş olabilir. Lütfen yeniden giriş yapın.'
   }
-
-  if (normalized.includes('geciken') && normalized.includes('ödeme')) {
-    return {
-      query,
-      content:
-        'Geciken ödeme listesi için sahte müşteri verisi kullanılmıyor.\n\n' +
-        'Cari ve tahsilat verileri içe aktarıldığında burada gerçek bakiyeler listelenecek.',
-      source: 'Finans modülü · TRIKOMEX Textile',
-      generatedAt,
-    }
+  if (error.status === 403) {
+    return 'Bu soruyu sormak için yetkiniz yok.'
   }
-
-  return {
-    query,
-    content:
-      'Komutunuz alındı. Gerçek AI entegrasyonu henüz aktif değil.\n\n' +
-      'Velora, doğal dildeki isteğinizi ilgili ERP modülüne yönlendirecek. ' +
-      'Veri değiştiren işlemlerde uygulamadan önce onayınız istenecektir.',
-    source: 'Velora AI',
-    generatedAt,
+  if (error.status === 429) {
+    return 'Çok fazla istek gönderdiniz. Lütfen bir dakika sonra tekrar deneyin.'
   }
+  if (error.status === 503) {
+    return (
+      error.message ||
+      'Velora asistanı şu an kullanılamıyor. Yapılandırmayı kontrol edin.'
+    )
+  }
+  if (error.status === 400) {
+    return error.message || 'Geçersiz soru. Lütfen metni kontrol edin.'
+  }
+  return error.message || 'Yanıt alınamadı. Lütfen daha sonra tekrar deneyin.'
 }
 
 export function AiCommandPanel({
@@ -91,26 +93,65 @@ export function AiCommandPanel({
   onQuickCommand?: (command: string) => void
 }) {
   const [commandInput, setCommandInput] = useState('')
-  const [demoResponse, setDemoResponse] = useState<DemoResponse | null>(null)
+  const [response, setResponse] = useState<AssistantResponse | null>(null)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
   const commandInputRef = useRef<HTMLTextAreaElement>(null)
+  const lastSentRef = useRef('')
 
   const handleQuickCommand = (command: string) => {
     setCommandInput(command)
-    setDemoResponse(null)
+    setError('')
     commandInputRef.current?.focus()
     onQuickCommand?.(command)
   }
 
-  const handleCommandSubmit = () => {
+  const handleCommandSubmit = async () => {
     const trimmed = commandInput.trim()
-    if (!trimmed) return
-    setDemoResponse(getDemoResponse(trimmed))
+    if (!trimmed || loading) return
+
+    if (trimmed === lastSentRef.current && response) {
+      setError('Aynı soruyu art arda göndermeyin. Metni biraz değiştirin.')
+      return
+    }
+
+    setError('')
+    setResponse(null)
+    setLoading(true)
+
+    try {
+      const data = await apiRequest<ErpChatResponse>('/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: trimmed }),
+      })
+
+      lastSentRef.current = trimmed
+      const moduleKey = data.module ?? data.intent ?? 'unsupported'
+      setResponse({
+        query: trimmed,
+        content: data.answer,
+        source: data.dataSource
+          ? `Veri kaynağı: ${data.dataSource}`
+          : `Velora AI · ${data.recordsUsed} kayıt özeti`,
+        module: MODULE_LABELS[moduleKey] ?? moduleKey,
+        intent: data.intent,
+        generatedAt: formatAlgiersTime(data.dataFreshness || data.generatedAt),
+        dateFrom: data.dateFrom,
+        dateTo: data.dateTo,
+        disclaimer: data.disclaimer,
+      })
+    } catch (err) {
+      setError(mapErrorMessage(err))
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleCommandKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
-      handleCommandSubmit()
+      void handleCommandSubmit()
     }
   }
 
@@ -119,7 +160,7 @@ export function AiCommandPanel({
       <div className="ai-command__header">
         <h2 className="ai-command__title">Velora'ya Sor</h2>
         <p className="ai-command__subtitle">
-          Doğal dilde sorun — Velora doğru modülü bulsun
+          Salt-okunur ERP asistanı — yetkili olduğunuz şirket verileriyle yanıtlar
         </p>
       </div>
 
@@ -128,19 +169,24 @@ export function AiCommandPanel({
           ref={commandInputRef}
           className="ai-command__input"
           value={commandInput}
-          onChange={(event) => setCommandInput(event.target.value)}
+          onChange={(event) => {
+            lastSentRef.current = ''
+            setCommandInput(event.target.value)
+          }}
           onKeyDown={handleCommandKeyDown}
           placeholder={COMMAND_PLACEHOLDER}
           rows={2}
+          maxLength={1000}
+          disabled={loading}
           aria-label="Velora'ya komut girin"
         />
         <button
           type="button"
           className="ai-command__submit"
-          onClick={handleCommandSubmit}
-          disabled={!commandInput.trim()}
+          onClick={() => void handleCommandSubmit()}
+          disabled={!commandInput.trim() || loading}
         >
-          Gönder
+          {loading ? 'Gönderiliyor…' : 'Gönder'}
         </button>
       </div>
 
@@ -150,6 +196,7 @@ export function AiCommandPanel({
             key={command}
             type="button"
             className="quick-chip"
+            disabled={loading}
             onClick={() => handleQuickCommand(command)}
           >
             {command}
@@ -157,22 +204,42 @@ export function AiCommandPanel({
         ))}
       </div>
 
-      {demoResponse && (
+      {loading && (
+        <p className="ai-command__status" aria-live="polite">
+          Yetkili veriler analiz ediliyor…
+        </p>
+      )}
+
+      {error && (
+        <p className="ai-command__error" role="alert">
+          {error}
+        </p>
+      )}
+
+      {response && (
         <article className="demo-response" aria-live="polite">
           <div className="demo-response__header">
             <span className="demo-response__badge">Yanıt</span>
-            <span className="demo-response__time">{demoResponse.generatedAt}</span>
+            <span className="demo-response__time">{response.generatedAt}</span>
           </div>
           <p className="demo-response__query">
             <span className="demo-response__query-label">Soru: </span>
-            {demoResponse.query}
+            {response.query}
           </p>
           <div className="demo-response__body">
-            {demoResponse.content.split('\n').map((line, index) => (
+            {response.content.split('\n').map((line, index) => (
               <p key={`${index}-${line.slice(0, 12)}`}>{line || '\u00A0'}</p>
             ))}
           </div>
-          <footer className="demo-response__footer">{demoResponse.source}</footer>
+          <p className="demo-response__meta">
+            Modül: {response.module ?? '—'}
+            {' · '}
+            Aralık: {response.dateFrom ?? '—'} → {response.dateTo ?? '—'}
+          </p>
+          <footer className="demo-response__footer">{response.source}</footer>
+          {response.disclaimer && (
+            <p className="demo-response__disclaimer">{response.disclaimer}</p>
+          )}
         </article>
       )}
     </section>

@@ -78,10 +78,11 @@ export const orderStatusFilters = ['Tümü', 'Onay Bekliyor', 'Üretimde', 'Sevk
 export const CRITICAL_ALERTS: Array<{ id: string; text: string; action: string }> = []
 
 export const QUICK_COMMANDS = [
-  'Bugünkü üretimi özetle',
-  'Stoku azalan ürünleri göster',
-  'Yeni sipariş oluştur',
-  'Geciken ödemeleri listele',
+  'Kasadaki toplam bakiye nedir?',
+  'Son 5 kasa hareketini özetle.',
+  'Bakiyesi en yüksek müşterileri göster.',
+  'Stoku azalan ürünleri göster.',
+  'Bugünkü üretimi özetle.',
 ] as const
 
 export function matchesSearch(text: string, query: string): boolean {
