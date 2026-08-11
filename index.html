@@ -1,15 +1,68 @@
 <!doctype html>
-<html lang="tr">
+<html lang="tr" dir="ltr">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#1a2332" />
-    <meta name="description" content="Velora ERP — TRIKOMEX Textile" />
-    <title>Velora ERP · TRIKOMEX Textile</title>
+    <meta name="description" content="VEXOR ERP — TRIKOMEX Textile" />
+    <meta name="application-name" content="VEXOR ERP" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="VEXOR" />
+    <link rel="apple-touch-icon" href="/pwa-192.png" />
+    <title>VEXOR ERP · TRIKOMEX Textile</title>
+    <style>
+      .velora-boot {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        margin: 0;
+        background:
+          linear-gradient(180deg, rgb(3 12 30 / 18%), rgb(3 12 30 / 62%)),
+          url('/velora-erp-splash.webp') center / cover no-repeat,
+          #061329;
+        color: #fff;
+        font-family: "Segoe UI", system-ui, sans-serif;
+      }
+      .velora-boot__content {
+        display: grid;
+        justify-items: center;
+        gap: 14px;
+        text-align: center;
+      }
+      .velora-boot__name {
+        font-size: 38px;
+        font-weight: 700;
+        letter-spacing: -1px;
+      }
+      .velora-boot__tag {
+        color: #b9d6ff;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.2em;
+      }
+      .velora-boot__spinner {
+        width: 30px;
+        height: 30px;
+        border: 3px solid rgb(255 255 255 / 24%);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: velora-spin 0.8s linear infinite;
+      }
+      @keyframes velora-spin { to { transform: rotate(360deg); } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root" dir="ltr">
+      <main class="velora-boot" aria-label="VEXOR ERP yükleniyor">
+        <div class="velora-boot__content">
+          <div class="velora-boot__name">VEXOR</div>
+          <div class="velora-boot__tag">ERP</div>
+          <div class="velora-boot__spinner"></div>
+        </div>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

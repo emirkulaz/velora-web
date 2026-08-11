@@ -1,5 +1,8 @@
 import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { ApiError, apiRequest } from '../data/api'
+import { algiersYmd } from '../data/dates'
+import { useSpeechToText } from '../hooks/useSpeechToText'
+import { Icon } from '../components/Icons'
 
 type ChatRole = 'user' | 'assistant'
 
@@ -32,7 +35,7 @@ const QUICK_PROMPTS = [
 ]
 
 const DISCLAIMER =
-  'Velora AI analiz amaçlıdır. Kesin muhasebe kararı vermeden önce kayıtları kontrol edin.'
+  'VEXOR AI analiz amaçlıdır. Kesin muhasebe kararı vermeden önce kayıtları kontrol edin.'
 
 function formatAlgiers(iso?: string | null) {
   if (!iso) return '—'
@@ -47,13 +50,13 @@ function formatAlgiers(iso?: string | null) {
 }
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10)
+  return algiersYmd()
 }
 
 function daysAgoIso(days: number) {
   const d = new Date()
   d.setDate(d.getDate() - days)
-  return d.toISOString().slice(0, 10)
+  return algiersYmd(d)
 }
 
 export function FinanceAiModule() {
@@ -65,6 +68,10 @@ export function FinanceAiModule() {
   const [error, setError] = useState('')
   const lastPayloadRef = useRef('')
   const listRef = useRef<HTMLDivElement>(null)
+  const voice = useSpeechToText((transcript) => {
+    lastPayloadRef.current = ''
+    setInput((current) => `${current}${current.trim() ? ' ' : ''}${transcript}`)
+  })
 
   const send = async (rawMessage: string) => {
     const message = rawMessage.trim()
@@ -79,7 +86,7 @@ export function FinanceAiModule() {
     setError('')
     setLoading(true)
     const userMsg: ChatMessage = {
-      id: `u-${Date.now()}`,
+      id: `u-${crypto.randomUUID()}`,
       role: 'user',
       content: message,
     }
@@ -101,7 +108,7 @@ export function FinanceAiModule() {
       setMessages((prev) => [
         ...prev,
         {
-          id: `a-${Date.now()}`,
+          id: `a-${crypto.randomUUID()}`,
           role: 'assistant',
           content: response.answer,
           dateFrom: response.dateFrom,
@@ -219,7 +226,7 @@ export function FinanceAiModule() {
             }
           >
             <div className="finance-ai__bubble-label">
-              {msg.role === 'user' ? 'Siz' : 'Velora AI'}
+              {msg.role === 'user' ? 'Siz' : 'VEXOR AI'}
             </div>
             <div className="finance-ai__bubble-body">{msg.content}</div>
             {msg.role === 'assistant' && (
@@ -241,6 +248,7 @@ export function FinanceAiModule() {
       </div>
 
       {error && <p className="finance-ai__error">{error}</p>}
+      {voice.error && <p className="finance-ai__error" role="alert">{voice.error}</p>}
 
       <form className="finance-ai__composer" onSubmit={onSubmit}>
         <textarea
@@ -255,9 +263,28 @@ export function FinanceAiModule() {
           placeholder="Örn. Bu ay kasanın durumunu özetle"
           disabled={loading}
         />
-        <button type="submit" disabled={loading || !input.trim()}>
-          Gönder
-        </button>
+        <div className="finance-ai__composer-actions">
+          <button
+            type="button"
+            className={`finance-ai__voice ${voice.isListening ? 'finance-ai__voice--listening' : ''}`}
+            onClick={voice.isListening ? voice.stop : voice.start}
+            disabled={!voice.isSupported || loading}
+            aria-pressed={voice.isListening}
+            aria-label={voice.isListening ? 'Dinlemeyi durdur' : 'Konuşarak yaz'}
+            title={
+              voice.isSupported
+                ? voice.isListening
+                  ? 'Dinlemeyi durdur'
+                  : 'Konuşarak yaz'
+                : 'Tarayıcınız sesli girişi desteklemiyor'
+            }
+          >
+            <Icon name="microphone" />
+          </button>
+          <button type="submit" disabled={loading || !input.trim()}>
+            Gönder
+          </button>
+        </div>
       </form>
 
       <p className="finance-ai__disclaimer">{DISCLAIMER}</p>

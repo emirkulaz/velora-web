@@ -6,6 +6,14 @@ import {
   rememberCompanyPresentation,
   type CompanyPresentation,
 } from '../data/companyBranding'
+import {
+  getQuickLoginAccounts,
+  isQuickLoginEnabled,
+  type QuickLoginAccount,
+} from '../data/quickLoginAccounts'
+import { useI18n } from '../i18n/I18nProvider'
+import { InstallAppButton } from './InstallAppButton'
+import { LanguageSelector } from './LanguageSelector'
 import { VeloraLogo } from './VeloraLogo'
 import './LoginScreen.css'
 
@@ -23,23 +31,25 @@ export function LoginScreen({
   rememberedCompany,
   onAuthenticated,
 }: LoginScreenProps) {
+  const { t } = useI18n()
   const [login, setLogin] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [rememberMe, setRememberMe] = useState(true)
   const rememberedTrikomex = isRememberedTrikomex(rememberedCompany)
+  const showQuickLogin = isQuickLoginEnabled()
+  const quickAccounts = showQuickLogin ? getQuickLoginAccounts() : []
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+  const authenticate = async (identifierRaw: string, passwordValue: string) => {
     setError('')
     setIsSubmitting(true)
 
     try {
-      const identifier = login.trim()
+      const identifier = identifierRaw.trim()
       const payload = identifier.includes('@')
-        ? { email: identifier, password }
-        : { login: identifier, password }
+        ? { email: identifier, password: passwordValue }
+        : { login: identifier, password: passwordValue }
 
       const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
@@ -78,33 +88,48 @@ export function LoginScreen({
 
       onAuthenticated(company, { mustChangePassword: Boolean(mustChangePassword) })
     } catch {
-      setError('Giriş bilgileri hatalı. Lütfen tekrar deneyin.')
+      setError(t('login.error'))
     } finally {
       setIsSubmitting(false)
     }
   }
 
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    await authenticate(login, password)
+  }
+
+  const handleQuickLogin = async (account: QuickLoginAccount) => {
+    setLogin(account.identifier)
+    setPassword(account.password)
+    await authenticate(account.identifier, account.password)
+  }
+
   return (
     <main className="login-page">
       <section className="login-panel" aria-labelledby="login-title">
-        <VeloraLogo variant="full" theme="light" />
+        <div className="login-panel__language">
+          <LanguageSelector />
+        </div>
+        <VeloraLogo variant="full" theme="light" className="login-brand" />
         <div className="login-panel__heading">
           <p className="login-panel__eyebrow">
-            {rememberedTrikomex ? `${rememberedCompany.name} · Velora ERP` : 'Velora ERP'}
+            {rememberedTrikomex ? `${rememberedCompany.name} · VEXOR ERP` : 'VEXOR ERP'}
           </p>
-          <h1 id="login-title">Hesabınıza giriş yapın</h1>
+          <h1 id="login-title">{t('login.title')}</h1>
           <p>
             {rememberedTrikomex
               ? `${rememberedCompany.name} operasyonlarını güvenle yönetin.`
-              : 'Operasyonlarınızı Velora ile güvenle yönetin.'}
+              : t('login.description')}
           </p>
         </div>
 
         <form className="login-form" onSubmit={handleSubmit}>
           <label>
-            E-posta veya kullanıcı adı
+            {t('login.email')}
             <input
               type="text"
+              dir="ltr"
               value={login}
               onChange={(event) => setLogin(event.target.value)}
               autoComplete="username"
@@ -112,9 +137,10 @@ export function LoginScreen({
             />
           </label>
           <label>
-            Parola
+            {t('login.password')}
             <input
               type="password"
+              dir="ltr"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               autoComplete="current-password"
@@ -127,63 +153,92 @@ export function LoginScreen({
               checked={rememberMe}
               onChange={(event) => setRememberMe(event.target.checked)}
             />
-            <span>Beni hatırla</span>
+            <span>{t('login.remember')}</span>
           </label>
 
           {error && <p className="login-form__error" role="alert">{error}</p>}
 
           <button type="submit" className="login-form__submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Giriş yapılıyor…' : 'Giriş yap'}
+            {isSubmitting ? t('login.submitting') : t('login.submit')}
           </button>
         </form>
+
+        <InstallAppButton className="install-app-btn--login" />
       </section>
 
-      <aside
-        className="login-showcase"
-        aria-label={
-          rememberedTrikomex
-            ? `${rememberedCompany.name} üretim yönetimi`
-            : 'Velora üretim yönetimi'
-        }
-      >
-        <div className="login-showcase__image" />
-        <div className="login-showcase__content">
-          {rememberedTrikomex && rememberedCompany.logo && (
-            <img
-              className="login-showcase__brand-logo"
-              src={rememberedCompany.logo}
-              alt={`${rememberedCompany.name} logosu`}
-            />
-          )}
-          <span className="login-showcase__eyebrow">
-            {rememberedTrikomex ? rememberedCompany.name : 'Velora ERP'}
-          </span>
-          <h2>Üretiminizdeki her kritik karar tek ekranda.</h2>
-          <p>
-            Stok, sipariş, üretim ve finans akışlarını Velora ile net ve
-            hızlı yönetin.
-          </p>
-          {rememberedTrikomex && (
-            <p className="login-showcase__tagline">
-              Meilleures Couleurs · Meilleurs Vêtements
+      {showQuickLogin && quickAccounts.length > 0 ? (
+        <aside className="demo-login" aria-label={t('login.quick.title')}>
+          <div className="demo-login__heading">
+            <span>{t('login.quick.eyebrow')}</span>
+            <h2>{t('login.quick.title')}</h2>
+            <p>{t('login.quick.description')}</p>
+          </div>
+          <div className="demo-company-grid">
+            {quickAccounts.map((account) => (
+              <button
+                key={account.id}
+                type="button"
+                className="demo-company-card"
+                disabled={isSubmitting}
+                onClick={() => void handleQuickLogin(account)}
+              >
+                {account.logoClass ? (
+                  <span className={`demo-company-card__logo ${account.logoClass}`} />
+                ) : null}
+                <strong>{account.label}</strong>
+                <span>{account.description}</span>
+              </button>
+            ))}
+          </div>
+        </aside>
+      ) : (
+        <aside
+          className="login-showcase"
+          aria-label={
+            rememberedTrikomex
+              ? `${rememberedCompany.name} üretim yönetimi`
+              : 'VEXOR üretim yönetimi'
+          }
+        >
+          <div className="login-showcase__image" />
+          <div className="login-showcase__content">
+            {rememberedTrikomex && rememberedCompany.logo && (
+              <img
+                className="login-showcase__brand-logo"
+                src={rememberedCompany.logo}
+                alt={`${rememberedCompany.name} logosu`}
+              />
+            )}
+            <span className="login-showcase__eyebrow">
+              {rememberedTrikomex ? rememberedCompany.name : 'VEXOR ERP'}
+            </span>
+            <h2>Üretiminizdeki her kritik karar tek ekranda.</h2>
+            <p>
+              Stok, sipariş, üretim ve finans akışlarını VEXOR ile net ve
+              hızlı yönetin.
             </p>
-          )}
-          <div className="login-showcase__stats">
-            <div>
-              <strong>Stok</strong>
-              <span>anlık görünürlük</span>
-            </div>
-            <div>
-              <strong>Üretim</strong>
-              <span>kontrollü akış</span>
-            </div>
-            <div>
-              <strong>Velora AI</strong>
-              <span>doğal dil desteği</span>
+            {rememberedTrikomex && (
+              <p className="login-showcase__tagline">
+                Meilleures Couleurs · Meilleurs Vêtements
+              </p>
+            )}
+            <div className="login-showcase__stats">
+              <div>
+                <strong>Stok</strong>
+                <span>anlık görünürlük</span>
+              </div>
+              <div>
+                <strong>Üretim</strong>
+                <span>kontrollü akış</span>
+              </div>
+              <div>
+                <strong>VEXOR AI</strong>
+                <span>doğal dil desteği</span>
+              </div>
             </div>
           </div>
-        </div>
-      </aside>
+        </aside>
+      )}
     </main>
   )
 }

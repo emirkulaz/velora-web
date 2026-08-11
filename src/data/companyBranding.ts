@@ -164,3 +164,12 @@ export function isTextileCompany(
 ): boolean {
   return presentation?.sectorPack === 'TEXTILE'
 }
+
+/** API logo yoksa TRIKOMEX için yerel marka dosyasına düş. */
+export function resolveCompanyLogo(
+  presentation: CompanyPresentation | null | undefined,
+): string | null {
+  if (presentation?.logo) return presentation.logo
+  if (isRememberedTrikomex(presentation ?? null)) return '/trikomex-logo.png?v=2'
+  return null
+}

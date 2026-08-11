@@ -65,9 +65,9 @@ export function ChangePasswordScreen({ onChanged }: ChangePasswordScreenProps) {
   return (
     <main className="login-page">
       <section className="login-panel" aria-labelledby="change-password-title">
-        <VeloraLogo variant="full" theme="light" />
+        <VeloraLogo variant="full" theme="light" className="login-brand" />
         <div className="login-panel__heading">
-          <p className="login-panel__eyebrow">Velora ERP</p>
+          <p className="login-panel__eyebrow">VEXOR ERP</p>
           <h1 id="change-password-title">Parolanızı değiştirin</h1>
           <p>İlk girişte geçici parolayı değiştirmeniz zorunludur.</p>
         </div>
@@ -77,6 +77,7 @@ export function ChangePasswordScreen({ onChanged }: ChangePasswordScreenProps) {
             Mevcut parola
             <input
               type="password"
+              dir="ltr"
               value={currentPassword}
               onChange={(event) => setCurrentPassword(event.target.value)}
               autoComplete="current-password"
@@ -87,6 +88,7 @@ export function ChangePasswordScreen({ onChanged }: ChangePasswordScreenProps) {
             Yeni parola
             <input
               type="password"
+              dir="ltr"
               value={newPassword}
               onChange={(event) => setNewPassword(event.target.value)}
               autoComplete="new-password"
@@ -98,6 +100,7 @@ export function ChangePasswordScreen({ onChanged }: ChangePasswordScreenProps) {
             Yeni parola (tekrar)
             <input
               type="password"
+              dir="ltr"
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}
               autoComplete="new-password"

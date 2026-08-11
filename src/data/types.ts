@@ -1,10 +1,13 @@
 export type MenuId =
   | 'overview'
+  | 'dailyWork'
   | 'customers'
+  | 'customerRequests'
   | 'products'
   | 'orders'
   | 'inventory'
   | 'production'
+  | 'costCalculation'
   | 'finance'
   | 'financeAi'
   | 'users'

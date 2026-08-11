@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Modal } from '../components/Modal'
 import { ModuleSummary } from '../components/ModuleSummary'
 import { ModuleToolbar } from '../components/ModuleToolbar'
-import { apiGet } from '../data/api'
+import { ApiError, apiGet, apiPost } from '../data/api'
 
 type Amount = number | string
 
@@ -49,6 +50,12 @@ interface LedgerSummaryResponse {
   meaning?: { positive: string; negative: string }
 }
 
+type CustomerOption = { id: number; name: string }
+type CashType = 'CASH_IN' | 'CASH_OUT'
+
+const OPEN_CASH_FLAG = 'velora.finance.openCash'
+const OPEN_COLLECTION_FLAG = 'velora.finance.openCollection'
+
 function amount(value: Amount | null | undefined) {
   return Number(value ?? 0)
 }
@@ -65,6 +72,17 @@ function formatDate(value: string | null) {
   return new Date(value).toLocaleDateString('tr-TR', { timeZone: 'Africa/Algiers' })
 }
 
+function todayYmd(): string {
+  const now = new Date()
+  const algiers = new Date(
+    now.toLocaleString('en-US', { timeZone: 'Africa/Algiers' }),
+  )
+  const y = algiers.getFullYear()
+  const m = String(algiers.getMonth() + 1).padStart(2, '0')
+  const d = String(algiers.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
 function normalizeAccounts(payload: unknown): CashAccountSummary[] {
   if (Array.isArray(payload)) return payload as CashAccountSummary[]
   if (
@@ -77,36 +95,188 @@ function normalizeAccounts(payload: unknown): CashAccountSummary[] {
   return []
 }
 
-export function FinanceModule() {
+export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
   const [search, setSearch] = useState('')
   const [ledgerSearch, setLedgerSearch] = useState('')
   const [transactions, setTransactions] = useState<CashTransaction[]>([])
   const [accounts, setAccounts] = useState<CashAccountSummary[]>([])
   const [ledgerCustomers, setLedgerCustomers] = useState<LedgerCustomerSummary[]>([])
+  const [customers, setCustomers] = useState<CustomerOption[]>([])
   const [error, setError] = useState('')
+  const [cashFormError, setCashFormError] = useState('')
+  const [collectionFormError, setCollectionFormError] = useState('')
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [cashOpen, setCashOpen] = useState(false)
+  const [collectionOpen, setCollectionOpen] = useState(false)
+
+  const [cashType, setCashType] = useState<CashType>('CASH_IN')
+  const [cashAmount, setCashAmount] = useState('')
+  const [cashTransactionAt, setCashTransactionAt] = useState(todayYmd())
+  const [cashCategory, setCashCategory] = useState('')
+  const [cashDescription, setCashDescription] = useState('')
+  const [cashCustomerId, setCashCustomerId] = useState('')
+  const [cashAccountId, setCashAccountId] = useState('')
+
+  const [collectionCustomerId, setCollectionCustomerId] = useState('')
+  const [collectionAmount, setCollectionAmount] = useState('')
+  const [collectionTransactionAt, setCollectionTransactionAt] = useState(todayYmd())
+  const [collectionDescription, setCollectionDescription] = useState('')
+  const [collectionAccountId, setCollectionAccountId] = useState('')
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const [cashTransactions, cashSummary, ledgerSummary, customerRows] = await Promise.all([
+        apiGet<CashTransaction[]>('/cash/transactions'),
+        apiGet<unknown>('/cash/summary'),
+        apiGet<LedgerSummaryResponse>('/customer-ledger/summary').catch(() => null),
+        apiGet<Array<{ id: number; name: string }>>('/customers').catch(() => []),
+      ])
+      setTransactions(Array.isArray(cashTransactions) ? cashTransactions : [])
+      setAccounts(normalizeAccounts(cashSummary))
+      setLedgerCustomers(ledgerSummary?.customers ?? [])
+      setCustomers(customerRows.map((c) => ({ id: c.id, name: c.name })))
+      setError('')
+    } catch {
+      setError('Finans verileri henüz alınamadı. API bağlantısını kontrol edin.')
+      setTransactions([])
+      setAccounts([])
+      setLedgerCustomers([])
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    setLoading(true)
-    Promise.all([
-      apiGet<CashTransaction[]>('/cash/transactions'),
-      apiGet<unknown>('/cash/summary'),
-      apiGet<LedgerSummaryResponse>('/customer-ledger/summary').catch(() => null),
-    ])
-      .then(([cashTransactions, cashSummary, ledgerSummary]) => {
-        setTransactions(Array.isArray(cashTransactions) ? cashTransactions : [])
-        setAccounts(normalizeAccounts(cashSummary))
-        setLedgerCustomers(ledgerSummary?.customers ?? [])
-        setError('')
-      })
-      .catch(() => {
-        setError('Finans verileri henüz alınamadı. API bağlantısını kontrol edin.')
-        setTransactions([])
-        setAccounts([])
-        setLedgerCustomers([])
-      })
-      .finally(() => setLoading(false))
+    void load()
   }, [])
+
+  const resetCashForm = () => {
+    setCashType('CASH_IN')
+    setCashAmount('')
+    setCashTransactionAt(todayYmd())
+    setCashCategory('')
+    setCashDescription('')
+    setCashCustomerId('')
+    setCashAccountId('')
+    setCashFormError('')
+  }
+
+  const resetCollectionForm = () => {
+    setCollectionCustomerId('')
+    setCollectionAmount('')
+    setCollectionTransactionAt(todayYmd())
+    setCollectionDescription('')
+    setCollectionAccountId('')
+    setCollectionFormError('')
+  }
+
+  const openCash = () => {
+    resetCashForm()
+    setCashOpen(true)
+  }
+
+  const openCollection = () => {
+    resetCollectionForm()
+    setCollectionOpen(true)
+  }
+
+  useEffect(() => {
+    if (!canWrite) return
+    try {
+      if (sessionStorage.getItem(OPEN_CASH_FLAG) === '1') {
+        sessionStorage.removeItem(OPEN_CASH_FLAG)
+        resetCashForm()
+        setCashOpen(true)
+      }
+      if (sessionStorage.getItem(OPEN_COLLECTION_FLAG) === '1') {
+        sessionStorage.removeItem(OPEN_COLLECTION_FLAG)
+        resetCollectionForm()
+        setCollectionOpen(true)
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [canWrite])
+
+  const handleCashSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!canWrite || saving) return
+    const amt = Number(cashAmount)
+    if (!Number.isFinite(amt) || amt < 0.01) {
+      setCashFormError('Geçerli bir tutar girin.')
+      return
+    }
+    if (!cashCategory.trim() || !cashDescription.trim()) {
+      setCashFormError('Kategori ve açıklama zorunludur.')
+      return
+    }
+    setSaving(true)
+    setCashFormError('')
+    setError('')
+    try {
+      await apiPost('/cash/transactions', {
+        type: cashType,
+        amount: amt,
+        transactionAt: cashTransactionAt,
+        category: cashCategory.trim(),
+        description: cashDescription.trim(),
+        relatedCustomerId: cashCustomerId ? Number(cashCustomerId) : undefined,
+        cashAccountId: cashAccountId ? Number(cashAccountId) : undefined,
+      })
+      setCashOpen(false)
+      resetCashForm()
+      await load()
+    } catch (err) {
+      setCashFormError(
+        err instanceof ApiError ? err.message : 'Kasa hareketi kaydedilemedi.',
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleCollectionSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!canWrite || saving) return
+    if (!collectionCustomerId) {
+      setCollectionFormError('Müşteri seçin.')
+      return
+    }
+    const amt = Number(collectionAmount)
+    if (!Number.isFinite(amt) || amt < 0.01) {
+      setCollectionFormError('Geçerli bir tutar girin.')
+      return
+    }
+    if (!collectionDescription.trim()) {
+      setCollectionFormError('Açıklama zorunludur.')
+      return
+    }
+    setSaving(true)
+    setCollectionFormError('')
+    setError('')
+    try {
+      await apiPost('/cash/collections', {
+        customerId: Number(collectionCustomerId),
+        amount: amt,
+        transactionAt: collectionTransactionAt,
+        description: collectionDescription.trim(),
+        cashAccountId: collectionAccountId
+          ? Number(collectionAccountId)
+          : undefined,
+      })
+      setCollectionOpen(false)
+      resetCollectionForm()
+      await load()
+    } catch (err) {
+      setCollectionFormError(
+        err instanceof ApiError ? err.message : 'Tahsilat kaydedilemedi.',
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const filteredCash = useMemo(() => {
     const query = search.toLocaleLowerCase('tr-TR')
@@ -155,7 +325,7 @@ export function FinanceModule() {
         />
         <p className="finance-notes" style={{ marginBottom: 12 }}>
           Pozitif bakiye: müşteri bize borçlu. Negatif bakiye: müşteri alacaklı veya avanslı.
-          Yalnızca Excel aktarımı ve Velora’da oluşturulan hareketler gösterilir (DEMO yok).
+          Yalnızca Excel aktarımı ve VEXOR’da oluşturulan hareketler gösterilir (DEMO yok).
         </p>
         <div className="table-wrap">
           <table className="data-table">
@@ -198,16 +368,31 @@ export function FinanceModule() {
         <section className="panel panel--full">
           <div className="panel__header">
             <h2>Kasa Hareketleri</h2>
-            <span className="panel__meta">
-              {loading ? 'Yükleniyor…' : `${filteredCash.length} kayıt`}
-            </span>
+            {canWrite ? (
+              <div className="form-actions" style={{ margin: 0 }}>
+                <button type="button" className="btn btn--primary" onClick={openCash}>
+                  + Kasa hareketi
+                </button>
+                <button type="button" className="btn btn--ghost" onClick={openCollection}>
+                  + Tahsilat
+                </button>
+              </div>
+            ) : (
+              <span className="panel__meta">
+                {loading ? 'Yükleniyor…' : `${filteredCash.length} kayıt`}
+              </span>
+            )}
           </div>
           <ModuleToolbar
             search={search}
             onSearchChange={setSearch}
             searchPlaceholder="Açıklama veya kasa hesabı ara..."
           />
-          {error && <p className="demo-notice">{error}</p>}
+          {error && (
+            <p className="demo-notice" role="alert">
+              {error}
+            </p>
+          )}
           <div className="table-wrap">
             <table className="data-table">
               <thead>
@@ -286,12 +471,244 @@ export function FinanceModule() {
             <p>
               Saat dilimi: <strong>Africa/Algiers</strong>
             </p>
-            <p>
-              Beklenen kasa (import sonrası): <strong>49.390 DZD</strong>
-            </p>
           </div>
         </section>
       </div>
+
+      <Modal
+        open={cashOpen}
+        title="Kasa hareketi"
+        onClose={() => {
+          setCashOpen(false)
+          setCashFormError('')
+        }}
+      >
+        <form className="demo-form" onSubmit={(e) => void handleCashSubmit(e)}>
+          <label>
+            Tip
+            <select
+              dir="ltr"
+              value={cashType}
+              onChange={(e) => setCashType(e.target.value as CashType)}
+            >
+              <option value="CASH_IN">Giriş (CASH_IN)</option>
+              <option value="CASH_OUT">Çıkış (CASH_OUT)</option>
+            </select>
+          </label>
+          <label>
+            Tutar (DZD)
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              required
+              dir="ltr"
+              value={cashAmount}
+              onChange={(e) => setCashAmount(e.target.value)}
+            />
+          </label>
+          <label>
+            Tarih
+            <input
+              type="date"
+              required
+              dir="ltr"
+              value={cashTransactionAt}
+              onChange={(e) => setCashTransactionAt(e.target.value)}
+            />
+          </label>
+          <label>
+            Kategori
+            <input
+              required
+              dir="ltr"
+              value={cashCategory}
+              onChange={(e) => setCashCategory(e.target.value)}
+              placeholder="Örn. Satış, Gider, Transfer"
+            />
+          </label>
+          <label>
+            Açıklama
+            <input
+              required
+              dir="ltr"
+              value={cashDescription}
+              onChange={(e) => setCashDescription(e.target.value)}
+            />
+          </label>
+          <label>
+            İlişkili müşteri (opsiyonel)
+            <select
+              dir="ltr"
+              value={cashCustomerId}
+              onChange={(e) => setCashCustomerId(e.target.value)}
+            >
+              <option value="">Yok</option>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Kasa hesabı (opsiyonel)
+            <select
+              dir="ltr"
+              value={cashAccountId}
+              onChange={(e) => setCashAccountId(e.target.value)}
+            >
+              <option value="">Varsayılan</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.code} — {a.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {cashFormError && (
+            <p className="demo-notice" role="alert">
+              {cashFormError}
+            </p>
+          )}
+          <div className="form-actions">
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={() => {
+                setCashOpen(false)
+                setCashFormError('')
+              }}
+            >
+              Vazgeç
+            </button>
+            <button type="submit" className="btn btn--primary" disabled={saving}>
+              {saving ? 'Kaydediliyor…' : 'Kaydet'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={collectionOpen}
+        title="Tahsilat"
+        onClose={() => {
+          setCollectionOpen(false)
+          setCollectionFormError('')
+        }}
+      >
+        <form className="demo-form" onSubmit={(e) => void handleCollectionSubmit(e)}>
+          <label>
+            Müşteri
+            <select
+              required
+              dir="ltr"
+              value={collectionCustomerId}
+              onChange={(e) => setCollectionCustomerId(e.target.value)}
+            >
+              <option value="">Seçin</option>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Tutar (DZD)
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              required
+              dir="ltr"
+              value={collectionAmount}
+              onChange={(e) => setCollectionAmount(e.target.value)}
+            />
+          </label>
+          <label>
+            Tarih
+            <input
+              type="date"
+              required
+              dir="ltr"
+              value={collectionTransactionAt}
+              onChange={(e) => setCollectionTransactionAt(e.target.value)}
+            />
+          </label>
+          <label>
+            Açıklama
+            <input
+              required
+              dir="ltr"
+              value={collectionDescription}
+              onChange={(e) => setCollectionDescription(e.target.value)}
+            />
+          </label>
+          <label>
+            Kasa hesabı (opsiyonel)
+            <select
+              dir="ltr"
+              value={collectionAccountId}
+              onChange={(e) => setCollectionAccountId(e.target.value)}
+            >
+              <option value="">Varsayılan</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.code} — {a.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {customers.length === 0 && (
+            <p className="demo-notice" role="status">
+              Önce müşteri kaydı oluşturun.
+            </p>
+          )}
+          {collectionFormError && (
+            <p className="demo-notice" role="alert">
+              {collectionFormError}
+            </p>
+          )}
+          <div className="form-actions">
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={() => {
+                setCollectionOpen(false)
+                setCollectionFormError('')
+              }}
+            >
+              Vazgeç
+            </button>
+            <button
+              type="submit"
+              className="btn btn--primary"
+              disabled={saving || customers.length === 0}
+            >
+              {saving ? 'Kaydediliyor…' : 'Kaydet'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </>
   )
+}
+
+/** Günlük İşler vb. → kasa hareketi modalını açar. */
+export function markOpenFinanceCash(): void {
+  try {
+    sessionStorage.setItem(OPEN_CASH_FLAG, '1')
+  } catch {
+    // ignore
+  }
+}
+
+/** Günlük İşler vb. → tahsilat modalını açar. */
+export function markOpenFinanceCollection(): void {
+  try {
+    sessionStorage.setItem(OPEN_COLLECTION_FLAG, '1')
+  } catch {
+    // ignore
+  }
 }

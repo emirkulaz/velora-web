@@ -1,3 +1,7 @@
+/** User-facing product brand (sidebar, header, login — single source of truth). */
+export const BRAND_NAME = 'VEXOR'
+export const BRAND_PRODUCT = 'VEXOR ERP'
+
 type VeloraLogoProps = {
   variant?: 'full' | 'mark'
   theme?: 'light' | 'dark'
@@ -43,11 +47,11 @@ export function VeloraLogo({
   return (
     <div
       className={`velora-brand velora-brand--${theme} ${className}`.trim()}
-      aria-label="Velora"
+      aria-label={BRAND_NAME}
     >
       <VeloraMark className="velora-brand__mark" />
       <div className="velora-brand__text">
-        <span className="velora-brand__name">Velora</span>
+        <span className="velora-brand__name">{BRAND_NAME}</span>
         <span className="velora-brand__tag">ERP</span>
       </div>
     </div>

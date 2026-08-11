@@ -6,12 +6,50 @@
 }
 
 .login-panel {
+  position: relative;
   padding: 48px;
   background: #fff;
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 40px;
+}
+
+.login-panel__language {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+}
+
+.language-selector select {
+  min-height: 36px;
+  padding: 0 28px 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--color-text-heading);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.login-panel .login-brand {
+  gap: 16px;
+}
+
+.login-panel .login-brand .velora-brand__mark {
+  width: 56px;
+  height: 64px;
+}
+
+.login-panel .login-brand .velora-brand__name {
+  font-size: 34px;
+  letter-spacing: -0.9px;
+}
+
+.login-panel .login-brand .velora-brand__tag {
+  font-size: 13px;
+  letter-spacing: 1.8px;
 }
 
 .login-panel__heading {
@@ -54,7 +92,9 @@
   font-weight: 600;
 }
 
-.login-form input {
+.login-form input,
+.login-form textarea,
+.login-form select {
   height: 46px;
   padding: 0 14px;
   border: 1px solid var(--color-border);
@@ -62,6 +102,14 @@
   color: var(--color-text-heading);
   font-size: 15px;
   outline: none;
+  direction: ltr !important;
+  text-align: left !important;
+  unicode-bidi: normal !important;
+}
+
+.login-form input[type='number'],
+.login-form input[type='tel'] {
+  text-align: right !important;
 }
 
 .login-form input:focus {
@@ -106,6 +154,84 @@
   background: var(--color-danger-bg);
   color: var(--color-danger);
   font-size: 13px;
+}
+
+.install-app-btn {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.install-app-btn--login {
+  margin-top: 16px;
+  min-height: 40px;
+  width: 100%;
+  max-width: 360px;
+  color: var(--color-primary-dark);
+  border-color: #bfdbfe;
+  background: var(--color-primary-light);
+}
+
+.install-app-btn--login:hover {
+  border-color: var(--color-primary);
+}
+
+.install-app-btn--header {
+  min-height: 36px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.install-app-btn--header:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary-dark);
+  background: var(--color-primary-light);
+}
+
+.install-app-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 12px;
+  max-width: 360px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface, #f8fafc);
+}
+
+.install-app-hint__text {
+  margin: 0;
+  flex: 1;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-text-muted, #475569);
+}
+
+.install-app-hint__dismiss {
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted, #64748b);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.install-app-hint__dismiss:hover {
+  color: var(--color-text);
+}
+
+.install-app-btn--header.install-app-hint,
+.install-app-hint.install-app-btn--header {
+  margin-top: 0;
+  max-width: 280px;
 }
 
 .demo-login {
@@ -242,6 +368,12 @@
   transform: translateY(-2px);
 }
 
+.demo-company-card:disabled {
+  cursor: wait;
+  opacity: 0.7;
+  transform: none;
+}
+
 .demo-company-card strong {
   color: var(--color-text-heading);
   font-size: 15px;
@@ -253,11 +385,6 @@
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.demo-company-card__password {
-  color: var(--color-primary-dark) !important;
-  font-weight: 600;
 }
 
 .demo-company-card__logo {

@@ -1,18 +1,28 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { AiCommandPanel } from './components/AiCommandPanel'
 import { ChangePasswordScreen } from './components/ChangePasswordScreen'
+import { ExchangeRateTicker } from './components/ExchangeRateTicker'
 import { Icon } from './components/Icons'
+import { InstallAppButton } from './components/InstallAppButton'
+import { LanguageSelector } from './components/LanguageSelector'
 import { LoginScreen } from './components/LoginScreen'
-import { VeloraLogo } from './components/VeloraLogo'
+import { StartupScreen } from './components/StartupScreen'
+import { BRAND_NAME, VeloraLogo } from './components/VeloraLogo'
 import {
   clearLastCompanyPresentation,
   readLastCompanyPresentation,
   rememberCompanyPresentation,
+  resolveCompanyLogo,
   type CompanyPresentation,
 } from './data/companyBranding'
-import { ApiError, apiGet } from './data/api'
-import { CRITICAL_ALERTS, menuItems, menuTitles, type MenuId } from './data/demoData'
-import { canAccessMenu, roleLabels, type AppUserRole } from './data/roles'
+import { SESSION_EXPIRED_EVENT, apiGet, apiPatch } from './data/api'
+import { CRITICAL_ALERTS, menuItems, type MenuId } from './data/demoData'
+import { canAccessMenu, type AppUserRole } from './data/roles'
+import { applyDocumentDirection, getUiTextDirection } from './i18n/documentDirection'
+import { enforceLtrOnTree } from './i18n/enforceLtrFields'
+import { getActiveUiLanguage } from './i18n/uiLanguage'
+import { useI18n } from './i18n/I18nProvider'
+import { fileToAvatarDataUrl } from './utils/avatarImage'
 import { renderModule } from './views'
 import './App.css'
 
@@ -21,6 +31,19 @@ interface CurrentUser {
   email: string
   role: AppUserRole
   mustChangePassword?: boolean
+  avatarUrl?: string | null
+}
+
+function clearSession() {
+  localStorage.removeItem('velora.accessToken')
+  sessionStorage.removeItem('velora.accessToken')
+  clearLastCompanyPresentation()
+}
+
+function preferredMenu(role: AppUserRole): MenuId {
+  return role === 'ACCOUNTING_OPERATOR' || role === 'ACCOUNTING_OPERATIONS'
+    ? 'dailyWork'
+    : 'overview'
 }
 
 function initials(name: string) {
@@ -34,16 +57,29 @@ function initials(name: string) {
 }
 
 function App() {
+  const { language, t } = useI18n()
   const [activeMenu, setActiveMenu] = useState<MenuId>('overview')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [avatarBusy, setAvatarBusy] = useState(false)
+  const [avatarError, setAvatarError] = useState('')
+  const avatarInputRef = useRef<HTMLInputElement>(null)
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
-  const [isAuthenticated, setIsAuthenticated] = useState(
-    () =>
-      Boolean(
-        localStorage.getItem('velora.accessToken') ??
+  const [uiDir, setUiDir] = useState<'ltr' | 'rtl'>(() =>
+    getUiTextDirection(getActiveUiLanguage()),
+  )
+  const [isAuthenticated, setIsAuthenticated] = useState(() =>
+    Boolean(
+      localStorage.getItem('velora.accessToken') ??
         sessionStorage.getItem('velora.accessToken'),
+    ),
+  )
+  const [authReady, setAuthReady] = useState(
+    () =>
+      !Boolean(
+        localStorage.getItem('velora.accessToken') ??
+          sessionStorage.getItem('velora.accessToken'),
       ),
   )
   const [companyPresentation, setCompanyPresentation] = useState<CompanyPresentation | null>(
@@ -63,28 +99,35 @@ function App() {
   )
 
   useEffect(() => {
+    setUiDir(applyDocumentDirection(getActiveUiLanguage()))
+    enforceLtrOnTree(document)
+  }, [])
+
+  useEffect(() => {
     if (!isAuthenticated) return
+    let cancelled = false
+    setAuthReady(false)
 
     apiGet<CurrentUser>('/users/me')
       .then((user) => {
+        if (cancelled) return
         setCurrentUser(user)
         setMustChangePassword(Boolean(user.mustChangePassword))
-        setActiveMenu((current) =>
-          canAccessMenu(user.role, current) ? current : 'overview',
-        )
+        setActiveMenu(preferredMenu(user.role))
       })
-      .catch((error: unknown) => {
-        if (error instanceof ApiError && error.status === 401) {
-          localStorage.removeItem('velora.accessToken')
-          sessionStorage.removeItem('velora.accessToken')
-          clearLastCompanyPresentation()
-          setCompanyPresentation(null)
-          setIsAuthenticated(false)
-          setMustChangePassword(false)
-        }
+      .catch(() => {
+        if (cancelled) return
+        clearSession()
+        setCompanyPresentation(null)
+        setIsAuthenticated(false)
+        setMustChangePassword(false)
+        setCurrentUser(null)
+      })
+      .finally(() => {
+        if (!cancelled) setAuthReady(true)
       })
 
-    apiGet<unknown>('/companies')
+    void apiGet<unknown>('/companies')
       .then((company) => {
         const presentation = rememberCompanyPresentation(company)
         if (presentation) setCompanyPresentation(presentation)
@@ -92,45 +135,110 @@ function App() {
       .catch(() => {
         // Keep the last safe presentation when the optional company refresh fails.
       })
+    return () => {
+      cancelled = true
+    }
   }, [isAuthenticated])
 
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      clearSession()
+      setCompanyPresentation(null)
+      setIsAuthenticated(false)
+      setMustChangePassword(false)
+      setCurrentUser(null)
+      setAuthReady(true)
+      closeHeaderMenus()
+    }
+
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired)
+    return () =>
+      window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired)
+  }, [])
+
   const logout = () => {
-    localStorage.removeItem('velora.accessToken')
-    sessionStorage.removeItem('velora.accessToken')
-    clearLastCompanyPresentation()
+    clearSession()
     setCompanyPresentation(null)
     closeHeaderMenus()
     setIsAuthenticated(false)
     setMustChangePassword(false)
     setCurrentUser(null)
+    setAuthReady(true)
+  }
+
+  const saveAvatar = async (avatarUrl: string | null) => {
+    setAvatarBusy(true)
+    setAvatarError('')
+    try {
+      const updated = await apiPatch<CurrentUser>('/users/me', { avatarUrl })
+      setCurrentUser(updated)
+    } catch (error) {
+      setAvatarError(
+        error instanceof Error ? error.message : t('profile.photoError'),
+      )
+    } finally {
+      setAvatarBusy(false)
+    }
+  }
+
+  const handleAvatarFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setAvatarBusy(true)
+    setAvatarError('')
+    try {
+      const dataUrl = await fileToAvatarDataUrl(file)
+      const updated = await apiPatch<CurrentUser>('/users/me', { avatarUrl: dataUrl })
+      setCurrentUser(updated)
+    } catch (error) {
+      setAvatarError(
+        error instanceof Error ? error.message : t('profile.photoError'),
+      )
+    } finally {
+      setAvatarBusy(false)
+    }
+  }
+
+  if (isAuthenticated && !authReady) {
+    return (
+      <div className="app" dir={uiDir}>
+        <StartupScreen />
+      </div>
+    )
   }
 
   if (!isAuthenticated) {
     return (
-      <LoginScreen
-        rememberedCompany={companyPresentation}
-        onAuthenticated={(company, options) => {
-          setCompanyPresentation(company)
-          setMustChangePassword(Boolean(options?.mustChangePassword))
-          setIsAuthenticated(true)
-        }}
-      />
+      <div className="app" dir={uiDir}>
+        <LoginScreen
+          rememberedCompany={companyPresentation}
+          onAuthenticated={(company, options) => {
+            setCompanyPresentation(company)
+            setMustChangePassword(Boolean(options?.mustChangePassword))
+            setAuthReady(false)
+            setIsAuthenticated(true)
+          }}
+        />
+      </div>
     )
   }
 
   if (mustChangePassword) {
     return (
-      <ChangePasswordScreen
-        onChanged={() => {
-          setMustChangePassword(false)
-          apiGet<CurrentUser>('/users/me').then(setCurrentUser).catch(() => undefined)
-        }}
-      />
+      <div className="app" dir={uiDir}>
+        <ChangePasswordScreen
+          onChanged={() => {
+            setMustChangePassword(false)
+            apiGet<CurrentUser>('/users/me').then(setCurrentUser).catch(() => undefined)
+          }}
+        />
+      </div>
     )
   }
 
   return (
-    <div className="dashboard">
+    <div className="app dashboard" dir={uiDir}>
       {sidebarOpen && (
         <button
           type="button"
@@ -160,18 +268,25 @@ function App() {
               <span className="nav-item__icon">
                 <Icon name={item.icon} />
               </span>
-              <span className="nav-item__label">{item.label}</span>
+              <span className="nav-item__label">{t(`nav.${item.id}`)}</span>
             </button>
           ))}
         </nav>
 
         <div className="sidebar__footer">
           <div className="company-badge">
+            {resolveCompanyLogo(companyPresentation) && (
+              <img
+                className="company-badge__logo"
+                src={resolveCompanyLogo(companyPresentation)!}
+                alt={companyPresentation?.name ?? 'Trikomex'}
+              />
+            )}
             <span className="company-badge__name">
-              {companyPresentation?.name ?? 'Velora'}
+              {companyPresentation?.name ?? BRAND_NAME}
             </span>
             <span className="company-badge__currency">
-              Para birimi: {companyPresentation?.currency ?? '—'}
+              {t('common.currency')}: {companyPresentation?.currency ?? '—'}
             </span>
           </div>
         </div>
@@ -188,21 +303,30 @@ function App() {
             >
               <Icon name="menu" />
             </button>
+            <LanguageSelector className="language-selector--header" />
             <div className="header__title">
-              <h1>{menuTitles[activeMenu]}</h1>
               <p>
-                Ağustos 2026 · {companyPresentation?.name ?? 'Velora'}
+                {new Date().toLocaleDateString(
+                  language === 'fr' ? 'fr-FR' : language === 'en' ? 'en-US' : 'tr-TR',
+                  {
+                  month: 'long',
+                  year: 'numeric',
+                  timeZone: 'Africa/Algiers',
+                  },
+                )}{' '}
+                · {companyPresentation?.name ?? BRAND_NAME}
               </p>
             </div>
           </div>
 
           <div className="header__right">
             <VeloraLogo variant="full" theme="light" className="header-brand" />
+            <InstallAppButton className="install-app-btn--header" />
             <div className="header-action">
               <button
                 type="button"
                 className="icon-btn"
-                aria-label="Bildirimler"
+                aria-label={t('common.notifications')}
                 aria-expanded={notificationsOpen}
                 onClick={() => {
                   setNotificationsOpen((open) => !open)
@@ -215,10 +339,10 @@ function App() {
                 )}
               </button>
               {notificationsOpen && (
-                <div className="header-popover header-popover--notifications" role="dialog" aria-label="Bildirimler">
-                  <strong>Bildirimler</strong>
+                <div className="header-popover header-popover--notifications" role="dialog" aria-label={t('common.notifications')}>
+                  <strong>{t('common.notifications')}</strong>
                   {CRITICAL_ALERTS.length === 0 ? (
-                    <p>Yeni bildirim yok.</p>
+                    <p>{t('common.noNotifications')}</p>
                   ) : (
                     <ul>
                       {CRITICAL_ALERTS.map((alert) => (
@@ -232,26 +356,63 @@ function App() {
             <div className="header-action">
               <button
                 type="button"
-                className="user-avatar"
-                aria-label="Profil menüsü"
+                className={`user-avatar${currentUser?.avatarUrl ? ' user-avatar--photo' : ''}`}
+                aria-label={t('common.profile')}
                 aria-expanded={profileOpen}
                 onClick={() => {
                   setProfileOpen((open) => !open)
                   setNotificationsOpen(false)
+                  setAvatarError('')
                 }}
               >
-                {currentUser ? initials(currentUser.name) : '…'}
+                {currentUser?.avatarUrl ? (
+                  <img src={currentUser.avatarUrl} alt="" />
+                ) : currentUser ? (
+                  initials(currentUser.name)
+                ) : (
+                  '…'
+                )}
               </button>
               {profileOpen && (
-                <div className="header-popover header-popover--profile" role="dialog" aria-label="Profil menüsü">
-                  <strong>{currentUser?.name ?? 'Hesabınız'}</strong>
-                  <span>{currentUser?.email ?? 'Profil yükleniyor…'}</span>
+                <div className="header-popover header-popover--profile" role="dialog" aria-label={t('common.profile')}>
+                  <strong>{currentUser?.name ?? '—'}</strong>
+                  <span>{currentUser?.email ?? t('common.loading')}</span>
                   <span>
                     {currentUser?.role
-                      ? roleLabels[currentUser.role]
+                      ? t(`role.${currentUser.role}`)
                       : '—'}
                   </span>
-                  <button type="button" onClick={logout}>Çıkış yap</button>
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="visually-hidden"
+                    onChange={(event) => void handleAvatarFileChange(event)}
+                  />
+                  <button
+                    type="button"
+                    className="header-popover__action"
+                    disabled={avatarBusy}
+                    onClick={() => avatarInputRef.current?.click()}
+                  >
+                    {avatarBusy ? t('profile.photoUpdating') : t('profile.changePhoto')}
+                  </button>
+                  {currentUser?.avatarUrl ? (
+                    <button
+                      type="button"
+                      className="header-popover__action header-popover__action--muted"
+                      disabled={avatarBusy}
+                      onClick={() => void saveAvatar(null)}
+                    >
+                      {t('profile.removePhoto')}
+                    </button>
+                  ) : null}
+                  {avatarError ? (
+                    <p className="header-popover__error" role="alert">
+                      {avatarError}
+                    </p>
+                  ) : null}
+                  <button type="button" onClick={logout}>{t('common.logout')}</button>
                 </div>
               )}
             </div>
@@ -272,8 +433,19 @@ function App() {
         )}
 
         <main className="content">
+          {activeMenu === 'overview' && <ExchangeRateTicker />}
           <AiCommandPanel />
-          <div className="module-area">{renderModule(activeMenu, companyPresentation)}</div>
+          <div className="module-area">
+            {renderModule(
+              activeMenu,
+              companyPresentation,
+              currentUser?.role,
+              setActiveMenu,
+            )}
+          </div>
+          <footer className="content-credit" aria-label="Credits">
+            Created by Emir Kulaz
+          </footer>
         </main>
       </div>
     </div>

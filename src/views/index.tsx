@@ -1,7 +1,22 @@
 import type { ReactElement } from 'react'
 import type { CompanyPresentation } from '../data/companyBranding'
+import {
+  canDeleteCustomers,
+  canDeleteProducts,
+  canWriteCustomerRequests,
+  canWriteCustomers,
+  canWriteFinance,
+  canWriteOrders,
+  canWriteProduction,
+  canWriteProducts,
+  canWriteStock,
+  type AppUserRole,
+} from '../data/roles'
 import type { MenuId } from '../data/types'
+import { CostCalculationModule } from './CostCalculationModule'
+import { CustomerRequestsModule } from './CustomerRequestsModule'
 import { CustomersModule } from './CustomersModule'
+import { DailyWorkModule } from './DailyWorkModule'
 import { FinanceAiModule } from './FinanceAiModule'
 import { FinanceModule } from './FinanceModule'
 import { InventoryModule } from './InventoryModule'
@@ -14,25 +29,52 @@ import { UsersModule } from './UsersModule'
 export function renderModule(
   id: MenuId,
   company: CompanyPresentation | null,
+  role?: AppUserRole | null,
+  onNavigate?: (menuId: MenuId) => void,
 ): ReactElement {
   switch (id) {
+    case 'dailyWork':
+      return <DailyWorkModule onNavigate={onNavigate} />
     case 'customers':
-      return <CustomersModule />
+      return (
+        <CustomersModule
+          canWrite={canWriteCustomers(role)}
+          canDelete={canDeleteCustomers(role)}
+        />
+      )
+    case 'customerRequests':
+      return (
+        <CustomerRequestsModule canWrite={canWriteCustomerRequests(role)} />
+      )
     case 'products':
-      return <ProductsModule company={company} />
+      return (
+        <ProductsModule
+          company={company}
+          canWrite={canWriteProducts(role)}
+          canDelete={canDeleteProducts(role)}
+        />
+      )
     case 'orders':
-      return <OrdersModule />
+      return <OrdersModule canWrite={canWriteOrders(role)} />
     case 'inventory':
-      return <InventoryModule company={company} />
+      return (
+        <InventoryModule
+          company={company}
+          canWrite={canWriteStock(role)}
+          canManageWarehouses={canWriteProducts(role)}
+        />
+      )
     case 'production':
-      return <ProductionModule />
+      return <ProductionModule canWrite={canWriteProduction(role)} />
+    case 'costCalculation':
+      return <CostCalculationModule canWrite={canWriteProduction(role)} />
     case 'finance':
-      return <FinanceModule />
+      return <FinanceModule canWrite={canWriteFinance(role)} />
     case 'financeAi':
       return <FinanceAiModule />
     case 'users':
       return <UsersModule />
     default:
-      return <OverviewModule />
+      return <OverviewModule role={role} onNavigate={onNavigate} />
   }
 }

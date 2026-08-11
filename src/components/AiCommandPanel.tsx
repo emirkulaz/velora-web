@@ -1,17 +1,25 @@
 import { useRef, useState, type KeyboardEvent } from 'react'
-import { ApiError, apiRequest } from '../data/api'
-import { QUICK_COMMANDS } from '../data/demoData'
+import { ApiError, apiPost, apiRequest } from '../data/api'
+import { useSpeechToText } from '../hooks/useSpeechToText'
+import { ConfirmDialog } from './ConfirmDialog'
+import { Icon } from './Icons'
 
 interface AssistantResponse {
   query: string
   content: string
-  source: string
-  module?: string
-  intent?: string
   generatedAt: string
-  dateFrom?: string | null
-  dateTo?: string | null
-  disclaimer?: string
+  writePreview?: WritePreviewState | null
+}
+
+interface WritePreviewState {
+  applied: boolean
+  notice: string
+  preview: string
+  lines?: string[]
+  previewToken?: string
+  confirmationRequired?: boolean
+  plannedAction?: string
+  ready?: boolean
 }
 
 interface ErpChatResponse {
@@ -25,27 +33,11 @@ interface ErpChatResponse {
   recordsUsed: number
   dataSource?: string
   disclaimer: string
-  writePreview?: {
-    applied: boolean
-    notice: string
-    preview: string
-  }
+  writePreview?: WritePreviewState
 }
 
 const COMMAND_PLACEHOLDER =
-  'Kasa, müşteri, stok, ürün veya üretim hakkında sorun...'
-
-const MODULE_LABELS: Record<string, string> = {
-  finance: 'Finans',
-  cash: 'Kasa',
-  customers: 'Müşteriler',
-  stock: 'Stok',
-  products: 'Ürünler',
-  warehouses: 'Depolar',
-  production: 'Üretim',
-  write_action: 'İşlem önizleme',
-  unsupported: 'Genel',
-}
+  'Örn: Bugünkü üretimi özetle · Ahmet Tekstil bakiyesi · 500 kg stok girişi…'
 
 function formatAlgiersTime(value: string | Date): string {
   const date = typeof value === 'string' ? new Date(value) : value
@@ -78,33 +70,36 @@ function mapErrorMessage(error: unknown): string {
   if (error.status === 503) {
     return (
       error.message ||
-      'Velora asistanı şu an kullanılamıyor. Yapılandırmayı kontrol edin.'
+      'Yerel asistan şu an kullanılamıyor. Ollama çalışıyor mu kontrol edin.'
     )
   }
-  if (error.status === 400) {
+  if (error.status === 400 || error.status === 404) {
     return error.message || 'Geçersiz soru. Lütfen metni kontrol edin.'
   }
   return error.message || 'Yanıt alınamadı. Lütfen daha sonra tekrar deneyin.'
 }
 
-export function AiCommandPanel({
-  onQuickCommand,
-}: {
-  onQuickCommand?: (command: string) => void
-}) {
+export function AiCommandPanel() {
   const [commandInput, setCommandInput] = useState('')
   const [response, setResponse] = useState<AssistantResponse | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirming, setConfirming] = useState(false)
   const commandInputRef = useRef<HTMLTextAreaElement>(null)
   const lastSentRef = useRef('')
-
-  const handleQuickCommand = (command: string) => {
-    setCommandInput(command)
-    setError('')
+  const voice = useSpeechToText((transcript) => {
+    lastSentRef.current = ''
+    setCommandInput((current) => `${current}${current.trim() ? ' ' : ''}${transcript}`)
     commandInputRef.current?.focus()
-    onQuickCommand?.(command)
-  }
+  })
+
+  const mapResponse = (trimmed: string, data: ErpChatResponse): AssistantResponse => ({
+    query: trimmed,
+    content: data.answer,
+    generatedAt: formatAlgiersTime(data.dataFreshness || data.generatedAt),
+    writePreview: data.writePreview ?? null,
+  })
 
   const handleCommandSubmit = async () => {
     const trimmed = commandInput.trim()
@@ -117,6 +112,7 @@ export function AiCommandPanel({
 
     setError('')
     setResponse(null)
+    setConfirmOpen(false)
     setLoading(true)
 
     try {
@@ -127,24 +123,37 @@ export function AiCommandPanel({
       })
 
       lastSentRef.current = trimmed
-      const moduleKey = data.module ?? data.intent ?? 'unsupported'
-      setResponse({
-        query: trimmed,
-        content: data.answer,
-        source: data.dataSource
-          ? `Veri kaynağı: ${data.dataSource}`
-          : `Velora AI · ${data.recordsUsed} kayıt özeti`,
-        module: MODULE_LABELS[moduleKey] ?? moduleKey,
-        intent: data.intent,
-        generatedAt: formatAlgiersTime(data.dataFreshness || data.generatedAt),
-        dateFrom: data.dateFrom,
-        dateTo: data.dateTo,
-        disclaimer: data.disclaimer,
-      })
+      setResponse(mapResponse(trimmed, data))
     } catch (err) {
       setError(mapErrorMessage(err))
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleConfirmWrite = async () => {
+    const token = response?.writePreview?.previewToken
+    if (!token || confirming) return
+    setConfirming(true)
+    setError('')
+    try {
+      const data = await apiPost<ErpChatResponse>('/ai/confirm-write', {
+        previewToken: token,
+      })
+      setConfirmOpen(false)
+      setResponse((prev) =>
+        prev
+          ? {
+              ...mapResponse(prev.query, data),
+              query: prev.query,
+            }
+          : mapResponse('Onay', data),
+      )
+    } catch (err) {
+      setError(mapErrorMessage(err))
+      setConfirmOpen(false)
+    } finally {
+      setConfirming(false)
     }
   }
 
@@ -155,12 +164,19 @@ export function AiCommandPanel({
     }
   }
 
+  const preview = response?.writePreview
+  const canConfirm =
+    Boolean(preview?.confirmationRequired) &&
+    !preview?.applied &&
+    Boolean(preview?.previewToken) &&
+    preview?.ready !== false
+
   return (
-    <section className="ai-command" aria-label="Velora'ya Sor">
+    <section className="ai-command" aria-label="VEXOR'a Sor">
       <div className="ai-command__header">
-        <h2 className="ai-command__title">Velora'ya Sor</h2>
+        <h2 className="ai-command__title">VEXOR'a Sor</h2>
         <p className="ai-command__subtitle">
-          Salt-okunur ERP asistanı — yetkili olduğunuz şirket verileriyle yanıtlar
+          Executive Copilot — şirket verisine dayalı özet; yazma işlemlerinde onay ister
         </p>
       </div>
 
@@ -168,6 +184,12 @@ export function AiCommandPanel({
         <textarea
           ref={commandInputRef}
           className="ai-command__input"
+          dir="ltr"
+          style={{
+            direction: 'ltr',
+            textAlign: 'left',
+            unicodeBidi: 'normal',
+          }}
           value={commandInput}
           onChange={(event) => {
             lastSentRef.current = ''
@@ -175,38 +197,43 @@ export function AiCommandPanel({
           }}
           onKeyDown={handleCommandKeyDown}
           placeholder={COMMAND_PLACEHOLDER}
-          rows={2}
+          rows={1}
           maxLength={1000}
-          disabled={loading}
-          aria-label="Velora'ya komut girin"
+          disabled={loading || confirming}
+          aria-label="VEXOR'a komut girin"
         />
-        <button
-          type="button"
-          className="ai-command__submit"
-          onClick={() => void handleCommandSubmit()}
-          disabled={!commandInput.trim() || loading}
-        >
-          {loading ? 'Gönderiliyor…' : 'Gönder'}
-        </button>
-      </div>
-
-      <div className="ai-command__quick">
-        {QUICK_COMMANDS.map((command) => (
+        <div className="ai-command__actions">
           <button
-            key={command}
             type="button"
-            className="quick-chip"
-            disabled={loading}
-            onClick={() => handleQuickCommand(command)}
+            className={`ai-command__voice ${voice.isListening ? 'ai-command__voice--listening' : ''}`}
+            onClick={voice.isListening ? voice.stop : voice.start}
+            disabled={!voice.isSupported || loading || confirming}
+            aria-pressed={voice.isListening}
+            aria-label={voice.isListening ? 'Dinlemeyi durdur' : 'Konuşarak yaz'}
+            title={
+              voice.isSupported
+                ? voice.isListening
+                  ? 'Dinlemeyi durdur'
+                  : 'Konuşarak yaz'
+                : 'Tarayıcınız sesli girişi desteklemiyor'
+            }
           >
-            {command}
+            <Icon name="microphone" />
           </button>
-        ))}
+          <button
+            type="button"
+            className="ai-command__submit"
+            onClick={() => void handleCommandSubmit()}
+            disabled={!commandInput.trim() || loading || confirming}
+          >
+            {loading ? 'Gönderiliyor…' : 'Gönder'}
+          </button>
+        </div>
       </div>
 
       {loading && (
         <p className="ai-command__status" aria-live="polite">
-          Yetkili veriler analiz ediliyor…
+          Niyet yorumlanıyor ve yetkili veriler analiz ediliyor…
         </p>
       )}
 
@@ -215,33 +242,79 @@ export function AiCommandPanel({
           {error}
         </p>
       )}
+      {voice.error && (
+        <p className="ai-command__error" role="alert">
+          {voice.error}
+        </p>
+      )}
 
       {response && (
         <article className="demo-response" aria-live="polite">
-          <div className="demo-response__header">
-            <span className="demo-response__badge">Yanıt</span>
-            <span className="demo-response__time">{response.generatedAt}</span>
-          </div>
           <p className="demo-response__query">
             <span className="demo-response__query-label">Soru: </span>
             {response.query}
           </p>
+          <div className="demo-response__header">
+            <span className="demo-response__badge">Yanıt</span>
+            <span className="demo-response__time">{response.generatedAt}</span>
+          </div>
           <div className="demo-response__body">
             {response.content.split('\n').map((line, index) => (
               <p key={`${index}-${line.slice(0, 12)}`}>{line || '\u00A0'}</p>
             ))}
           </div>
-          <p className="demo-response__meta">
-            Modül: {response.module ?? '—'}
-            {' · '}
-            Aralık: {response.dateFrom ?? '—'} → {response.dateTo ?? '—'}
-          </p>
-          <footer className="demo-response__footer">{response.source}</footer>
-          {response.disclaimer && (
-            <p className="demo-response__disclaimer">{response.disclaimer}</p>
+
+          {preview && !preview.applied && (
+            <div className="ai-write-preview">
+              <div className="ai-write-preview__title">İşlem önizleme</div>
+              {preview.lines && preview.lines.length > 0 ? (
+                <ul className="ai-write-preview__list">
+                  {preview.lines.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="ai-write-preview__text">{preview.preview}</p>
+              )}
+              <p className="ai-write-preview__notice">{preview.notice}</p>
+              {canConfirm && (
+                <div className="ai-write-preview__actions">
+                  <button
+                    type="button"
+                    className="btn btn--primary"
+                    disabled={confirming}
+                    onClick={() => setConfirmOpen(true)}
+                  >
+                    Onayla ve uygula
+                  </button>
+                </div>
+              )}
+              {preview.ready === false && (
+                <p className="ai-write-preview__hint">
+                  Onay için ürün, miktar veya müşteri bilgisini netleştirin.
+                </p>
+              )}
+            </div>
+          )}
+
+          {preview?.applied && (
+            <p className="ai-write-preview__applied">Onaylı işlem uygulandı.</p>
           )}
         </article>
       )}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="İşlemi onayla"
+        message={
+          preview
+            ? `${preview.lines?.join('\n') ?? preview.preview}\n\nBu işlem şirket verisini değiştirecek. Onaylıyor musunuz?`
+            : 'Bu işlem şirket verisini değiştirecek. Onaylıyor musunuz?'
+        }
+        confirmLabel={confirming ? 'Uygulanıyor…' : 'Onayla'}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={() => void handleConfirmWrite()}
+      />
     </section>
   )
 }

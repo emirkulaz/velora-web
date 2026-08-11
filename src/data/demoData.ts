@@ -13,11 +13,14 @@ export type { Customer, FinanceTransaction, InventoryItem, MenuId, MenuItem, Ord
 
 export const menuItems: MenuItem[] = [
   { id: 'overview', label: 'Genel Bakış', icon: 'grid' },
+  { id: 'dailyWork', label: 'Günlük İşler', icon: 'grid' },
   { id: 'customers', label: 'Müşteriler', icon: 'users' },
+  { id: 'customerRequests', label: 'Müşteri Talepleri', icon: 'users' },
   { id: 'products', label: 'Ürünler', icon: 'box' },
   { id: 'orders', label: 'Siparişler', icon: 'cart' },
   { id: 'inventory', label: 'Stok', icon: 'warehouse' },
   { id: 'production', label: 'Üretim', icon: 'factory' },
+  { id: 'costCalculation', label: 'Maliyet Hesaplama', icon: 'calculator' },
   { id: 'finance', label: 'Finans', icon: 'chart' },
   { id: 'financeAi', label: 'Finans Asistanı', icon: 'spark' },
   { id: 'users', label: 'Ekip', icon: 'users' },
@@ -25,14 +28,17 @@ export const menuItems: MenuItem[] = [
 
 export const menuTitles: Record<MenuId, string> = {
   overview: 'Genel Bakış',
+  dailyWork: 'Günlük İşler',
   customers: 'Müşteriler',
+  customerRequests: 'Müşteri Talepleri',
   products: 'Ürünler',
   orders: 'Siparişler',
   inventory: 'Stok',
   production: 'Üretim',
+  costCalculation: 'Maliyet Hesaplama',
   finance: 'Finans',
   financeAi: 'Finans Asistanı',
-  users: 'Ekip ve Yetkiler',
+  users: 'Ekip, maaş ve izin',
 }
 
 /** Placeholder stats — gerçek API bağlanana kadar sıfır. */
