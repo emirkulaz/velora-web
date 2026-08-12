@@ -56,7 +56,6 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         runtimeCaching: [
           {
-            // ERP API / JWT — asla cache’lenmez, sahte offline veri yok
             urlPattern: ({ url }) => url.pathname.startsWith('/api'),
             handler: 'NetworkOnly',
           },
@@ -69,7 +68,6 @@ export default defineConfig({
   ],
   envPrefix: ['VITE_', 'ENABLE_DEMO_MODE'],
   server: {
-    // Trikomex LAN: diğer PC’ler http://<bu-makine-IP>:5173 açabilsin
     host: '0.0.0.0',
     port: 5173,
     proxy: {
@@ -83,5 +81,6 @@ export default defineConfig({
   preview: {
     host: '0.0.0.0',
     port: 4173,
+    allowedHosts: ['erpvexor.com'],
   },
 })
