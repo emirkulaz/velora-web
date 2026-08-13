@@ -11,11 +11,14 @@ import { algiersDatetimeLocal, algiersYmd } from '../data/dates'
 const OPEN_CREATE_FLAG = 'velora.orders.openCreate'
 
 type CustomerOption = { id: number; name: string }
+type ProductOption = { id:number; code:string; name:string; unit:'METER'|'PIECE'|'KILOGRAM'; salePrice:number|null }
 
 type SalesOrder = {
   id: number
   customerId: number
   customerName: string | null
+  productId: number | null
+  productName: string | null
   orderNumber: string
   orderDate: string
   expectedDeliveryDate: string | null
@@ -78,6 +81,7 @@ function toIsoDateTime(value: string): string {
 export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
   const [orders, setOrders] = useState<SalesOrder[]>([])
   const [customers, setCustomers] = useState<CustomerOption[]>([])
+  const [products, setProducts] = useState<ProductOption[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [formError, setFormError] = useState('')
@@ -90,6 +94,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
   const [successNotice, setSuccessNotice] = useState('')
 
   const [customerId, setCustomerId] = useState('')
+  const [productId, setProductId] = useState('')
   const [orderDate, setOrderDate] = useState(todayYmd())
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('')
   const [quantity, setQuantity] = useState('1')
@@ -126,12 +131,14 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
     setLoading(true)
     setError('')
     try {
-      const [orderRows, customerRows] = await Promise.all([
+      const [orderRows, customerRows, productRows] = await Promise.all([
         apiGet<SalesOrder[]>('/orders'),
         apiGet<Array<{ id: number; name: string }>>('/customers'),
+        apiGet<ProductOption[]>('/products'),
       ])
       setOrders(orderRows)
       setCustomers(customerRows.map((c) => ({ id: c.id, name: c.name })))
+      setProducts(productRows)
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -191,6 +198,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
 
   const resetForm = () => {
     setCustomerId('')
+    setProductId('')
     setOrderDate(todayYmd())
     setExpectedDeliveryDate('')
     setQuantity('1')
@@ -245,6 +253,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           customerId: Number(customerId),
+          productId: productId ? Number(productId) : undefined,
           orderDate,
           expectedDeliveryDate: expectedDeliveryDate || undefined,
           quantity: Number(quantity),
@@ -404,6 +413,8 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
         </div>
 
         <ModuleToolbar
+          reportType="orders"
+          reportLabel="Sipariş Raporu"
           search={query}
           onSearchChange={setQuery}
           searchPlaceholder="Sipariş no, müşteri veya durum ara…"
@@ -497,6 +508,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
             <p>
               <strong>Müşteri:</strong> {selected.customerName ?? selected.customerId}
             </p>
+            <p><strong>Ürün:</strong> {selected.productName ?? 'Bağlı ürün yok'}</p>
             <p>
               <strong>Durum:</strong>{' '}
               {STATUS_LABELS[selected.status] ?? selected.status}
@@ -750,6 +762,13 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                   {c.name}
                 </option>
               ))}
+            </select>
+          </label>
+          <label>
+            Ürün
+            <select value={productId} onChange={(e) => { const id=e.target.value; setProductId(id); const p=products.find(x=>x.id===Number(id)); if(p){setUnit(p.unit); if(p.salePrice!=null)setUnitPrice(String(p.salePrice))} }}>
+              <option value="">Eski tip / ürünsüz sipariş</option>
+              {products.map(p=><option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
             </select>
           </label>
           <label>

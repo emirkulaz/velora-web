@@ -3,7 +3,6 @@ import { AiCommandPanel } from './components/AiCommandPanel'
 import { ChangePasswordScreen } from './components/ChangePasswordScreen'
 import { ExchangeRateTicker } from './components/ExchangeRateTicker'
 import { Icon } from './components/Icons'
-import { InstallAppButton } from './components/InstallAppButton'
 import { LanguageSelector } from './components/LanguageSelector'
 import { LoginScreen } from './components/LoginScreen'
 import { StartupScreen } from './components/StartupScreen'
@@ -23,6 +22,7 @@ import { enforceLtrOnTree } from './i18n/enforceLtrFields'
 import { getActiveUiLanguage } from './i18n/uiLanguage'
 import { useI18n } from './i18n/I18nProvider'
 import { fileToAvatarDataUrl } from './utils/avatarImage'
+import { DailyWorkActions } from './views/DailyWorkModule'
 import { renderModule } from './views'
 import './App.css'
 
@@ -57,11 +57,12 @@ function initials(name: string) {
 }
 
 function App() {
-  const { language, t } = useI18n()
+  const { t } = useI18n()
   const [activeMenu, setActiveMenu] = useState<MenuId>('overview')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('vexor.theme') === 'dark')
   const [avatarBusy, setAvatarBusy] = useState(false)
   const [avatarError, setAvatarError] = useState('')
   const avatarInputRef = useRef<HTMLInputElement>(null)
@@ -88,6 +89,11 @@ function App() {
   const [mustChangePassword, setMustChangePassword] = useState(false)
 
   const closeSidebar = () => setSidebarOpen(false)
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = darkMode ? 'dark' : 'light'
+    localStorage.setItem('vexor.theme', darkMode ? 'dark' : 'light')
+  }, [darkMode])
   const closeHeaderMenus = () => {
     setNotificationsOpen(false)
     setProfileOpen(false)
@@ -304,24 +310,20 @@ function App() {
               <Icon name="menu" />
             </button>
             <LanguageSelector className="language-selector--header" />
-            <div className="header__title">
-              <p>
-                {new Date().toLocaleDateString(
-                  language === 'fr' ? 'fr-FR' : language === 'en' ? 'en-US' : 'tr-TR',
-                  {
-                  month: 'long',
-                  year: 'numeric',
-                  timeZone: 'Africa/Algiers',
-                  },
-                )}{' '}
-                · {companyPresentation?.name ?? BRAND_NAME}
-              </p>
-            </div>
           </div>
 
           <div className="header__right">
             <VeloraLogo variant="full" theme="light" className="header-brand" />
-            <InstallAppButton className="install-app-btn--header" />
+            <button
+              type="button"
+              className="theme-toggle"
+              onClick={() => setDarkMode((enabled) => !enabled)}
+              aria-label={darkMode ? 'Açık moda geç' : 'Koyu moda geç'}
+              aria-pressed={darkMode}
+              title={darkMode ? 'Açık moda geç' : 'Koyu moda geç'}
+            >
+              <span aria-hidden="true">{darkMode ? '☀' : '◐'}</span>
+            </button>
             <div className="header-action">
               <button
                 type="button"
@@ -435,6 +437,9 @@ function App() {
         <main className="content">
           {activeMenu === 'overview' && <ExchangeRateTicker />}
           <AiCommandPanel />
+          {activeMenu === 'dailyWork' && (
+            <DailyWorkActions onNavigate={setActiveMenu} />
+          )}
           <div className="module-area">
             {renderModule(
               activeMenu,

@@ -1,5 +1,5 @@
 import { useRef, useState, type KeyboardEvent } from 'react'
-import { ApiError, apiPost, apiRequest } from '../data/api'
+import { ApiError, apiDownload, apiPost, apiRequest } from '../data/api'
 import { useSpeechToText } from '../hooks/useSpeechToText'
 import { ConfirmDialog } from './ConfirmDialog'
 import { Icon } from './Icons'
@@ -9,6 +9,18 @@ interface AssistantResponse {
   content: string
   generatedAt: string
   writePreview?: WritePreviewState | null
+  reportUrl?: string
+  evidence?: EvidenceItem[]
+}
+
+interface EvidenceItem {
+  metric: string
+  value: number | string | null
+  source: string
+  period?: { from: string; to: string; timezone?: string }
+  recordCount: number
+  confidence: 'VERIFIED' | 'PARTIAL' | 'REVIEW_REQUIRED' | 'UNAVAILABLE'
+  detail?: string
 }
 
 interface WritePreviewState {
@@ -34,6 +46,8 @@ interface ErpChatResponse {
   dataSource?: string
   disclaimer: string
   writePreview?: WritePreviewState
+  reportUrl?: string
+  evidence?: EvidenceItem[]
 }
 
 const COMMAND_PLACEHOLDER =
@@ -86,6 +100,7 @@ export function AiCommandPanel() {
   const [loading, setLoading] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [evidenceOpen, setEvidenceOpen] = useState(false)
   const commandInputRef = useRef<HTMLTextAreaElement>(null)
   const lastSentRef = useRef('')
   const voice = useSpeechToText((transcript) => {
@@ -98,21 +113,19 @@ export function AiCommandPanel() {
     query: trimmed,
     content: data.answer,
     generatedAt: formatAlgiersTime(data.dataFreshness || data.generatedAt),
-    writePreview: data.writePreview ?? null,
+  writePreview: data.writePreview ?? null,
+  reportUrl: data.reportUrl,
+  evidence: data.evidence ?? [],
   })
 
   const handleCommandSubmit = async () => {
     const trimmed = commandInput.trim()
     if (!trimmed || loading) return
 
-    if (trimmed === lastSentRef.current && response) {
-      setError('Aynı soruyu art arda göndermeyin. Metni biraz değiştirin.')
-      return
-    }
-
     setError('')
     setResponse(null)
     setConfirmOpen(false)
+    setEvidenceOpen(false)
     setLoading(true)
 
     try {
@@ -263,6 +276,26 @@ export function AiCommandPanel() {
               <p key={`${index}-${line.slice(0, 12)}`}>{line || '\u00A0'}</p>
             ))}
           </div>
+          {response.reportUrl && (
+            <button type="button" className="btn btn--report" onClick={() => void (async () => {
+              const blob = await apiDownload(response.reportUrl!)
+              const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'vexor-ai-raporu.pdf'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
+            })()}>PDF Raporunu İndir</button>
+          )}
+          {response.evidence && response.evidence.length > 0 && (
+            <div className="ai-evidence">
+              <button type="button" className="ai-evidence__toggle" onClick={() => setEvidenceOpen((open) => !open)} aria-expanded={evidenceOpen}>
+                {evidenceOpen ? 'Veri kaynağını gizle' : 'Veri kaynağını göster'}
+              </button>
+              {evidenceOpen && <div className="ai-evidence__details">{response.evidence.map((item) => (
+                <div className="ai-evidence__item" key={`${item.metric}-${item.source}`}>
+                  <strong>{item.metric}</strong><span>{item.source} · {item.recordCount} kayıt · {item.confidence}</span>
+                  {item.period && <span>{item.period.from} · {item.period.timezone ?? 'Africa/Algiers'}</span>}
+                  {item.detail && <small>{item.detail}</small>}
+                </div>
+              ))}</div>}
+            </div>
+          )}
 
           {preview && !preview.applied && (
             <div className="ai-write-preview">

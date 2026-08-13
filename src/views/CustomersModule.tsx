@@ -195,6 +195,8 @@ export function CustomersModule({
           )}
         </div>
         <ModuleToolbar
+          reportType="customers"
+          reportLabel="Müşteri Raporu"
           search={search}
           onSearchChange={setSearch}
           searchPlaceholder="Firma, şehir veya yetkili ara..."

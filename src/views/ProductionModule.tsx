@@ -6,7 +6,10 @@ import { ModuleToolbar } from '../components/ModuleToolbar'
 import { StatusBadge } from '../components/StatusBadge'
 import { SuccessToast } from '../components/Toast'
 import { ApiError, apiGet, apiPatch, apiPost } from '../data/api'
+import type { CompanyPresentation } from '../data/companyBranding'
 import { algiersYmd } from '../data/dates'
+import { materialShortLabel } from '../data/industryLabels'
+import { BomRecipesTab } from './BomRecipesTab'
 
 type ProductOption = {
   id: number
@@ -29,6 +32,33 @@ type ProductionOrder = {
   dueDate: string | null
   notes: string | null
   delayed: boolean
+  stockWarnings?: string[]
+  materials?: Array<{
+    materialProductId: number
+    materialName: string
+    plannedQuantity: number
+    actualQuantity: number | null
+    theoreticalWaste: number
+    actualWaste: number | null
+    unit: string
+    available: number
+    shortage: number
+    sufficient: boolean
+    variance: number | null
+    plannedCost: number | null
+    actualCost: number | null
+    status: string
+  }>
+  plannedMaterialCost?: number | null
+  actualMaterialCost?: number | null
+  missingCost?: boolean
+  extraCost?: {
+    laborCost: number
+    accessoryCost: number
+    packagingCost: number
+    otherCost: number
+    electricityCost: number
+  } | null
 }
 
 const STATUS_LABELS: Record<ProductionOrder['status'], string> = {
@@ -54,7 +84,13 @@ export function markOpenProductionCreate(): void {
   sessionStorage.setItem(OPEN_CREATE_FLAG, '1')
 }
 
-export function ProductionModule({ canWrite = false }: { canWrite?: boolean }) {
+export function ProductionModule({
+  company = null,
+  canWrite = false,
+}: {
+  company?: CompanyPresentation | null
+  canWrite?: boolean
+}) {
   const [search, setSearch] = useState('')
   const [orders, setOrders] = useState<ProductionOrder[]>([])
   const [products, setProducts] = useState<ProductOption[]>([])
@@ -74,6 +110,10 @@ export function ProductionModule({ canWrite = false }: { canWrite?: boolean }) {
     order: ProductionOrder
     status: ProductionOrder['status']
   } | null>(null)
+  const [tab, setTab] = useState<'orders' | 'boms'>('orders')
+  const [detail, setDetail] = useState<ProductionOrder | null>(null)
+  const [actuals, setActuals] = useState<Record<number, string>>({})
+  const [wastes, setWastes] = useState<Record<number, string>>({})
 
   const load = async () => {
     setLoading(true)
@@ -153,7 +193,7 @@ export function ProductionModule({ canWrite = false }: { canWrite?: boolean }) {
     setError('')
     setFormError('')
     try {
-      await apiPost('/production-orders', {
+      const created = await apiPost<ProductionOrder>('/production-orders', {
         productId: Number(productId),
         plannedQuantity: Number(plannedQuantity),
         unit,
@@ -163,7 +203,10 @@ export function ProductionModule({ canWrite = false }: { canWrite?: boolean }) {
       setFormOpen(false)
       resetForm()
       await load()
-      setSuccessNotice('Yeni üretim emri kaydedildi.')
+      const warning = created.stockWarnings?.length
+        ? ` Uyarı: ${created.stockWarnings.join(' · ')}`
+        : ''
+      setSuccessNotice(`Yeni üretim emri kaydedildi.${warning}`)
     } catch (err) {
       setFormError(
         err instanceof ApiError ? err.message : 'Üretim emri kaydedilemedi.',
@@ -194,6 +237,23 @@ export function ProductionModule({ canWrite = false }: { canWrite?: boolean }) {
     }
   }
 
+  const openDetail = async (order: ProductionOrder) => {
+    try {
+      const full = await apiGet<ProductionOrder>(`/production-orders/${order.id}`)
+      setDetail(full)
+      const nextActuals: Record<number, string> = {}
+      const nextWastes: Record<number, string> = {}
+      for (const line of full.materials ?? []) {
+        nextActuals[line.materialProductId] = String(line.actualQuantity ?? line.plannedQuantity)
+        nextWastes[line.materialProductId] = String(line.actualWaste ?? '')
+      }
+      setActuals(nextActuals)
+      setWastes(nextWastes)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Üretim detayı alınamadı.')
+    }
+  }
+
   const handleStatus = async (
     order: ProductionOrder,
     status: ProductionOrder['status'],
@@ -202,12 +262,22 @@ export function ProductionModule({ canWrite = false }: { canWrite?: boolean }) {
     setSaving(true)
     setError('')
     try {
-      const body: { status: string; completedQuantity?: number } = { status }
       if (status === 'COMPLETED') {
-        body.completedQuantity = order.plannedQuantity
+        await apiPost(`/production-orders/${order.id}/complete`, {
+          completedQuantity: order.plannedQuantity,
+          consumptions: (detail?.id === order.id ? detail.materials : order.materials)?.map((line) => ({
+            materialProductId: line.materialProductId,
+            actualQuantity: Number(actuals[line.materialProductId] ?? line.plannedQuantity),
+            wasteQuantity: wastes[line.materialProductId]
+              ? Number(wastes[line.materialProductId])
+              : undefined,
+          })),
+        })
+      } else {
+        await apiPatch(`/production-orders/${order.id}`, { status })
       }
-      await apiPatch(`/production-orders/${order.id}`, body)
       await load()
+      if (detail?.id === order.id) await openDetail(order)
       setSuccessNotice('Üretim emri durumu güncellendi.')
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Durum güncellenemedi.')
@@ -219,6 +289,25 @@ export function ProductionModule({ canWrite = false }: { canWrite?: boolean }) {
   return (
     <>
       <SuccessToast message={successNotice} onDismiss={() => setSuccessNotice('')} />
+      <div className="module-tabs" style={{ marginBottom: 16 }}>
+        <button
+          type="button"
+          className={tab === 'orders' ? 'module-tab module-tab--active' : 'module-tab'}
+          onClick={() => setTab('orders')}
+        >
+          Emirler
+        </button>
+        <button
+          type="button"
+          className={tab === 'boms' ? 'module-tab module-tab--active' : 'module-tab'}
+          onClick={() => setTab('boms')}
+        >
+          Reçeteler
+        </button>
+      </div>
+      {tab === 'boms' && <BomRecipesTab company={company} canWrite={canWrite} />}
+      {tab === 'orders' && (
+      <>
       <ModuleSummary
         items={[
           { label: 'Aktif Emir', value: loading ? '…' : String(summary.active) },
@@ -249,6 +338,8 @@ export function ProductionModule({ canWrite = false }: { canWrite?: boolean }) {
           )}
         </div>
         <ModuleToolbar
+          reportType="production"
+          reportLabel="Üretim Raporu"
           search={search}
           onSearchChange={setSearch}
           searchPlaceholder="Emir no veya ürün ara..."
@@ -275,7 +366,11 @@ export function ProductionModule({ canWrite = false }: { canWrite?: boolean }) {
             <tbody>
               {filtered.map((order) => (
                 <tr key={order.id} className={order.delayed ? 'row--delayed' : ''}>
-                  <td className="mono">{order.orderNumber}</td>
+                  <td className="mono">
+                    <button type="button" className="btn btn--ghost" onClick={() => void openDetail(order)}>
+                      {order.orderNumber}
+                    </button>
+                  </td>
                   <td>
                     <div>{order.productName ?? '—'}</div>
                     <div className="mono" style={{ fontSize: 12, opacity: 0.7 }}>
@@ -508,7 +603,7 @@ export function ProductionModule({ canWrite = false }: { canWrite?: boolean }) {
         }
         message={
           statusTarget?.status === 'COMPLETED'
-            ? 'Planlanan miktar tamamlanmış olarak kaydedilecek. Devam edilsin mi?'
+            ? 'Planlanan miktar tamamlanmış olarak kaydedilecek. Gerçek tüketim varsa detaydan girin. Devam edilsin mi?'
             : 'İptal edilmiş üretim emri yeniden açılamaz. Devam edilsin mi?'
         }
         confirmLabel={statusTarget?.status === 'COMPLETED' ? 'Tamamla' : 'İptal et'}
@@ -520,6 +615,108 @@ export function ProductionModule({ canWrite = false }: { canWrite?: boolean }) {
           setStatusTarget(null)
         }}
       />
+
+      <Modal
+        open={detail != null}
+        title={detail ? `${detail.orderNumber} · Reçete / Malzeme İhtiyacı` : 'Detay'}
+        onClose={() => setDetail(null)}
+      >
+        {detail && (
+          <div>
+            {(detail.materials ?? []).length === 0 ? (
+              <p className="demo-notice">Bu emir için reçete snapshot’ı yok.</p>
+            ) : (
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>{materialShortLabel(company)}</th>
+                      <th>Gerekli</th>
+                      <th>Stokta</th>
+                      <th>Eksik</th>
+                      <th>Gerçek</th>
+                      <th>Durum</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.materials?.map((line) => (
+                      <tr key={line.materialProductId}>
+                        <td>{line.materialName}</td>
+                        <td>
+                          {line.plannedQuantity.toLocaleString('fr-DZ')} {line.unit}
+                        </td>
+                        <td>
+                          {line.available.toLocaleString('fr-DZ')} {line.unit}
+                        </td>
+                        <td>
+                          {line.shortage.toLocaleString('fr-DZ')} {line.unit}
+                        </td>
+                        <td>
+                          {detail.status === 'COMPLETED' ? (
+                            <>
+                              {(line.actualQuantity ?? 0).toLocaleString('fr-DZ')} {line.unit}
+                              {line.variance != null && (
+                                <div className="panel__meta">
+                                  Sapma: {line.variance > 0 ? '+' : ''}
+                                  {line.variance.toLocaleString('fr-DZ')} {line.unit}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.001"
+                              style={{ width: 96 }}
+                              value={actuals[line.materialProductId] ?? String(line.plannedQuantity)}
+                              onChange={(e) =>
+                                setActuals((prev) => ({
+                                  ...prev,
+                                  [line.materialProductId]: e.target.value,
+                                }))
+                              }
+                            />
+                          )}
+                        </td>
+                        <td>{line.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p className="panel__meta" style={{ marginTop: 12 }}>
+              Planlanan malzeme maliyeti:{' '}
+              {detail.missingCost || detail.plannedMaterialCost == null
+                ? 'maliyet verisi eksik'
+                : `${detail.plannedMaterialCost.toLocaleString('fr-DZ')} DZD`}
+              {detail.actualMaterialCost != null &&
+                ` · Gerçek: ${detail.actualMaterialCost.toLocaleString('fr-DZ')} DZD`}
+            </p>
+            {detail.extraCost && (
+              <p className="panel__meta">
+                CostCalculation: işçilik {detail.extraCost.laborCost} · aksesuar{' '}
+                {detail.extraCost.accessoryCost} · paket {detail.extraCost.packagingCost} · elektrik{' '}
+                {detail.extraCost.electricityCost} · diğer {detail.extraCost.otherCost} DZD
+              </p>
+            )}
+            {canWrite && detail.status !== 'COMPLETED' && detail.status !== 'CANCELLED' && (
+              <div className="form-actions" style={{ marginTop: 16 }}>
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  disabled={saving}
+                  onClick={() => setStatusTarget({ order: detail, status: 'COMPLETED' })}
+                >
+                  Gerçek tüketim ile tamamla
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+      </>
+      )}
     </>
   )
 }

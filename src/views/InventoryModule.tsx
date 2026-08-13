@@ -16,6 +16,9 @@ interface StockBalance {
   unit: 'METER' | 'PIECE' | 'KILOGRAM'
   color: string | null
   widthCm: number | null
+  category: string | null
+  yarnType: string | null
+  productType: string | null
   costPrice: number | null
   unitCost: number | null
   quantity: number
@@ -24,6 +27,8 @@ interface StockBalance {
   totalValue: number | null
   valueComputable: boolean
   valueNote: string | null
+  criticalLevel?: number
+  isCritical?: boolean
   source: string
   packageCount: number
   warehouses: Array<{ code: string; name: string; quantity: number; packageCount: number }>
@@ -43,6 +48,7 @@ type WarehouseOption = {
 }
 
 type StockAction = 'INBOUND' | 'OUTBOUND'
+type MovementKind = 'finished' | 'yarn'
 
 const OPEN_MOVEMENT_FLAG = 'velora.inventory.openMovement'
 
@@ -63,16 +69,27 @@ function formatMoney(value: number) {
   })
 }
 
+function yarnKindLabel(item: StockBalance) {
+  return item.yarnType || item.category || item.productType || '—'
+}
+
 export function InventoryModule({
   company,
+  kind = 'finished',
   canWrite = false,
   canManageWarehouses = false,
 }: {
   company: CompanyPresentation | null
+  kind?: 'finished' | 'yarn'
   canWrite?: boolean
   canManageWarehouses?: boolean
 }) {
   const textile = isTextileCompany(company)
+  const isYarnInventory = kind === 'yarn'
+  const inventoryLabel = isYarnInventory ? 'İplik Stoğu' : 'Stok'
+  const inventoryLede = isYarnInventory
+    ? 'Üretimde kullanılan iplik ve diğer kilogram bazlı hammaddelerin stok takibi.'
+    : 'Satışa veya üretime hazır ürünlerin adet/metre bazlı stok takibi.'
   const [search, setSearch] = useState('')
   const [balances, setBalances] = useState<StockBalance[]>([])
   const [products, setProducts] = useState<ProductOption[]>([])
@@ -86,6 +103,7 @@ export function InventoryModule({
   const [successNotice, setSuccessNotice] = useState('')
 
   const [action, setAction] = useState<StockAction>('INBOUND')
+  const [movementKind, setMovementKind] = useState<MovementKind>(kind)
   const [productId, setProductId] = useState('')
   const [warehouseId, setWarehouseId] = useState('')
   const [quantity, setQuantity] = useState('')
@@ -100,7 +118,7 @@ export function InventoryModule({
   const loadBalances = async () => {
     setLoading(true)
     try {
-      const rows = await apiGet<StockBalance[]>('/stock/balances')
+      const rows = await apiGet<StockBalance[]>(`/stock/balances?kind=${kind}`)
       setBalances(rows)
       setError('')
     } catch {
@@ -139,7 +157,7 @@ export function InventoryModule({
   useEffect(() => {
     void loadBalances()
     void loadSelectOptions()
-  }, [])
+  }, [kind, isYarnInventory])
 
   const resetForm = () => {
     setAction('INBOUND')
@@ -153,9 +171,10 @@ export function InventoryModule({
     setFormError('')
   }
 
-  const openMovement = (nextAction: StockAction) => {
+  const openMovement = (nextAction: StockAction, nextKind: MovementKind = kind) => {
     resetForm()
     setAction(nextAction)
+    setMovementKind(nextKind)
     setFormOpen(true)
   }
 
@@ -165,6 +184,7 @@ export function InventoryModule({
       if (sessionStorage.getItem(OPEN_MOVEMENT_FLAG) === '1') {
         sessionStorage.removeItem(OPEN_MOVEMENT_FLAG)
         setAction('INBOUND')
+        setMovementKind(kind)
         setProductId('')
         setWarehouseId('')
         setQuantity('')
@@ -178,7 +198,7 @@ export function InventoryModule({
     } catch {
       // ignore storage errors
     }
-  }, [canWrite])
+  }, [canWrite, kind])
 
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault()
@@ -243,6 +263,20 @@ export function InventoryModule({
     }
   }
 
+  const selectableProducts = useMemo(
+    () =>
+      products.filter((p) =>
+        movementKind === 'yarn' ? p.unit === 'KILOGRAM' : p.unit !== 'KILOGRAM',
+      ),
+    [products, movementKind],
+  )
+
+  useEffect(() => {
+    if (productId && !selectableProducts.some((p) => String(p.id) === productId)) {
+      setProductId('')
+    }
+  }, [movementKind, selectableProducts, productId])
+
   const filtered = useMemo(() => {
     const query = search.toLocaleLowerCase('tr-TR')
     return balances.filter((item) =>
@@ -250,6 +284,8 @@ export function InventoryModule({
         item.name,
         item.code,
         item.color ?? '',
+        item.yarnType ?? '',
+        item.category ?? '',
         ...item.warehouses.map((warehouse) => warehouse.name),
       ].some((value) => value.toLocaleLowerCase('tr-TR').includes(query)),
     )
@@ -264,7 +300,9 @@ export function InventoryModule({
   const totalKilograms = balances
     .filter((item) => item.unit === 'KILOGRAM')
     .reduce((sum, item) => sum + item.quantity, 0)
-  const criticalCount = balances.filter((item) => item.quantity <= 0).length
+  const criticalCount = balances.filter((item) =>
+    item.isCritical ?? item.quantity <= (item.criticalLevel ?? (isYarnInventory ? 10 : 0)),
+  ).length
   const valued = balances.filter((item) => item.valueComputable && item.totalValue != null)
   const totalStockValue = valued.reduce((sum, item) => sum + (item.totalValue ?? 0), 0)
   const missingCostCount = balances.length - valued.length
@@ -274,10 +312,13 @@ export function InventoryModule({
       <SuccessToast message={successNotice} onDismiss={() => setSuccessNotice('')} />
       <ModuleSummary
         items={[
-          { label: 'Toplam Metre', value: loading ? '…' : formatQty(totalMeters), unit: 'm' },
-          { label: 'Toplam Adet', value: loading ? '…' : formatQty(totalPieces) },
-          { label: 'Toplam Kilogram', value: loading ? '…' : formatQty(totalKilograms), unit: 'kg' },
-          { label: 'Kritik Stok', value: loading ? '…' : String(criticalCount) },
+          ...(isYarnInventory
+            ? [{ label: 'Toplam İplik', value: loading ? '…' : formatQty(totalKilograms), unit: 'kg' }]
+            : [
+                { label: 'Toplam Metre', value: loading ? '…' : formatQty(totalMeters), unit: 'm' },
+                { label: 'Toplam Adet', value: loading ? '…' : formatQty(totalPieces) },
+              ]),
+          { label: 'Kritik Seviye', value: loading ? '…' : String(criticalCount) },
           {
             label: 'Toplam Stok Değeri',
             value: loading
@@ -300,7 +341,7 @@ export function InventoryModule({
 
       <section className="panel panel--full">
         <div className="panel__header">
-          <h2>Stok Durumu</h2>
+          <h2>{inventoryLabel}</h2>
           {canWrite ? (
             <div className="panel__header-actions">
               <button
@@ -324,33 +365,79 @@ export function InventoryModule({
             </span>
           )}
         </div>
+        <p className="inventory-lede">{inventoryLede}</p>
+        {!isYarnInventory && (
+          <ul className="inventory-examples">
+            <li>Yaka</li>
+            <li>Bant</li>
+            <li>Manşet</li>
+            <li>Diğer mamul ürünler</li>
+          </ul>
+        )}
         <ModuleToolbar
+          reportType="stock"
+          reportLabel="Stok Raporu"
           search={search}
           onSearchChange={setSearch}
-          searchPlaceholder="Ürün, SKU, renk veya depo ara..."
+          searchPlaceholder={isYarnInventory ? 'İplik, tür, renk veya depo ara...' : 'Ürün, SKU, renk veya depo ara...'}
         />
         {error && (
           <p className="demo-notice" role="alert">
             {error}
           </p>
         )}
+        {!loading && !error && balances.length === 0 ? (
+          <div className="empty-state empty-state--cta inventory-empty">
+            <p>
+              {isYarnInventory
+                ? 'Henüz iplik/hammadde stoğu yok.'
+                : 'Henüz mamul ürün stoğu yok.'}
+            </p>
+            {canWrite && (
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => openMovement('INBOUND')}
+              >
+                {isYarnInventory ? 'İplik Ekle' : 'Stok Girişi Yap'}
+              </button>
+            )}
+          </div>
+        ) : (
         <div className="table-wrap">
           <table className="data-table">
             <thead>
               <tr>
-                <th>Ürün</th>
-                {textile && <th>Renk</th>}
-                {textile && <th>Ölçü / En</th>}
-                <th>Birim</th>
-                <th>Mevcut</th>
-                <th>Rezerve</th>
-                <th>Kullanılabilir</th>
-                <th>Birim Maliyet</th>
-                <th>Toplam Değer</th>
+                {isYarnInventory ? (
+                  <>
+                    <th>Hammadde / iplik adı</th>
+                    <th>Tür</th>
+                    <th>Renk</th>
+                    <th>Mevcut kg</th>
+                    <th>Birim maliyet / kg</th>
+                    <th>Toplam stok değeri</th>
+                    <th>Kritik Seviye</th>
+                  </>
+                ) : (
+                  <>
+                    <th>Ürün</th>
+                    {textile && <th>Renk</th>}
+                    {textile && <th>Ölçü / En</th>}
+                    <th>Birim</th>
+                    <th>Mevcut Miktar</th>
+                    <th>Rezerve</th>
+                    <th>Kullanılabilir</th>
+                    <th>Birim Maliyet</th>
+                    <th>Toplam Değer</th>
+                    <th>Kritik Seviye</th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
-              {filtered.map((item) => (
+              {filtered.map((item) => {
+                const critical = item.criticalLevel ?? (isYarnInventory ? 10 : 0)
+                return (
                 <tr key={item.productId}>
                   <td>
                     <div>{item.name}</div>
@@ -358,36 +445,57 @@ export function InventoryModule({
                       {item.code}
                     </div>
                   </td>
-                  {textile && <td>{item.color ?? '—'}</td>}
-                  {textile && (
-                    <td>
-                      {item.widthCm != null ? `${item.widthCm.toLocaleString('tr-TR')} cm` : '—'}
-                    </td>
+                  {isYarnInventory ? (
+                    <>
+                      <td>{yarnKindLabel(item)}</td>
+                      <td>{item.color ?? '—'}</td>
+                      <td>{formatQty(item.quantity)}</td>
+                      <td className="amount-cell">
+                        {item.unitCost != null ? formatMoney(item.unitCost) : '—'}
+                      </td>
+                      <td className="amount-cell">
+                        {item.valueComputable && item.totalValue != null
+                          ? formatMoney(item.totalValue)
+                          : item.valueNote ?? '—'}
+                      </td>
+                      <td>{formatQty(critical)} kg</td>
+                    </>
+                  ) : (
+                    <>
+                      {textile && <td>{item.color ?? '—'}</td>}
+                      {textile && (
+                        <td>
+                          {item.widthCm != null ? `${item.widthCm.toLocaleString('tr-TR')} cm` : '—'}
+                        </td>
+                      )}
+                      <td>{unitLabel(item.unit)}</td>
+                      <td>{formatQty(item.quantity)}</td>
+                      <td>{formatQty(item.reservedQuantity)}</td>
+                      <td>{formatQty(item.availableQuantity)}</td>
+                      <td className="amount-cell">
+                        {item.unitCost != null ? formatMoney(item.unitCost) : '—'}
+                      </td>
+                      <td className="amount-cell">
+                        {item.valueComputable && item.totalValue != null
+                          ? formatMoney(item.totalValue)
+                          : item.valueNote ?? '—'}
+                      </td>
+                      <td>{formatQty(critical)}</td>
+                    </>
                   )}
-                  <td>{unitLabel(item.unit)}</td>
-                  <td>{formatQty(item.quantity)}</td>
-                  <td>{formatQty(item.reservedQuantity)}</td>
-                  <td>{formatQty(item.availableQuantity)}</td>
-                  <td className="amount-cell">
-                    {item.unitCost != null ? formatMoney(item.unitCost) : '—'}
-                  </td>
-                  <td className="amount-cell">
-                    {item.valueComputable && item.totalValue != null
-                      ? formatMoney(item.totalValue)
-                      : item.valueNote ?? '—'}
-                  </td>
                 </tr>
-              ))}
+              )})}
               {!loading && !error && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={textile ? 9 : 7} className="empty-cell">
-                    Henüz gerçek stok hareketi bulunmuyor.
+                  <td colSpan={isYarnInventory ? 7 : textile ? 10 : 8} className="empty-cell">
+                    Arama sonucu yok.
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+        )}
       </section>
 
       <section className="panel panel--full">
@@ -454,12 +562,23 @@ export function InventoryModule({
               value={action}
               onChange={(e) => setAction(e.target.value as StockAction)}
             >
-              <option value="INBOUND">Giriş (INBOUND)</option>
-              <option value="OUTBOUND">Çıkış (OUTBOUND)</option>
+              <option value="INBOUND">Stok Girişi</option>
+              <option value="OUTBOUND">Stok Çıkışı</option>
             </select>
           </label>
           <label>
-            Ürün
+            Stok türü
+            <select
+              dir="ltr"
+              value={movementKind}
+              onChange={(e) => setMovementKind(e.target.value as MovementKind)}
+            >
+              <option value="finished">Mamul Ürün</option>
+              <option value="yarn">İplik / Hammadde</option>
+            </select>
+          </label>
+          <label>
+            {movementKind === 'yarn' ? 'İplik / hammadde' : 'Mamul ürün'}
             <select
               required
               dir="ltr"
@@ -467,7 +586,7 @@ export function InventoryModule({
               onChange={(e) => setProductId(e.target.value)}
             >
               <option value="">Seçin</option>
-              {products.map((p) => (
+              {selectableProducts.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.code} — {p.name}
                 </option>
@@ -491,7 +610,7 @@ export function InventoryModule({
             </select>
           </label>
           <label>
-            Miktar
+            {movementKind === 'yarn' ? 'Miktar (kg)' : 'Miktar (adet / metre)'}
             <input
               type="number"
               min="0.001"
@@ -541,10 +660,12 @@ export function InventoryModule({
               onChange={(e) => setNote(e.target.value)}
             />
           </label>
-          {(products.length === 0 || warehouses.length === 0) && (
+          {(selectableProducts.length === 0 || warehouses.length === 0) && (
             <p className="demo-notice" role="status">
-              {products.length === 0
-                ? 'Önce ürün kaydı oluşturun.'
+              {selectableProducts.length === 0
+                ? movementKind === 'yarn'
+                  ? 'Önce iplik / hammadde ürün kaydı oluşturun.'
+                  : 'Önce mamul ürün kaydı oluşturun.'
                 : 'Önce depo kaydı oluşturun.'}
             </p>
           )}
@@ -567,7 +688,7 @@ export function InventoryModule({
             <button
               type="submit"
               className="btn btn--primary"
-              disabled={saving || products.length === 0 || warehouses.length === 0}
+              disabled={saving || selectableProducts.length === 0 || warehouses.length === 0}
             >
               {saving ? 'Kaydediliyor…' : 'Kaydet'}
             </button>

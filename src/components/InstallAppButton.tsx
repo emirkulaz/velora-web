@@ -17,7 +17,6 @@ function isStandaloneDisplay(): boolean {
 
 /**
  * Chrome/Edge “Uygulamayı yükle” — beforeinstallprompt ile native kurulum.
- * Prompt yoksa (Safari / henüz kriterler dolmadı) kısa Türkçe ipucu gösterir.
  */
 export function InstallAppButton({ className = '' }: { className?: string }) {
   const { t } = useI18n()
@@ -25,8 +24,6 @@ export function InstallAppButton({ className = '' }: { className?: string }) {
     null,
   )
   const [installed, setInstalled] = useState(false)
-  const [showHint, setShowHint] = useState(false)
-  const [hintDismissed, setHintDismissed] = useState(false)
 
   useEffect(() => {
     if (isStandaloneDisplay()) {
@@ -34,37 +31,19 @@ export function InstallAppButton({ className = '' }: { className?: string }) {
       return
     }
 
-    try {
-      if (sessionStorage.getItem('velora-install-hint-dismissed') === '1') {
-        setHintDismissed(true)
-      }
-    } catch {
-      /* ignore */
-    }
-
     const onBeforeInstall = (event: Event) => {
       event.preventDefault()
       setDeferred(event as BeforeInstallPromptEvent)
-      setShowHint(false)
     }
     const onInstalled = () => {
       setDeferred(null)
       setInstalled(true)
-      setShowHint(false)
     }
 
     window.addEventListener('beforeinstallprompt', onBeforeInstall)
     window.addEventListener('appinstalled', onInstalled)
 
-    // HTTPS + SW sonrası Chrome hemen prompt verebilir; yoksa manuel ipucu.
-    const hintTimer = window.setTimeout(() => {
-      if (!isStandaloneDisplay()) {
-        setShowHint(true)
-      }
-    }, 2500)
-
     return () => {
-      window.clearTimeout(hintTimer)
       window.removeEventListener('beforeinstallprompt', onBeforeInstall)
       window.removeEventListener('appinstalled', onInstalled)
     }
@@ -90,25 +69,5 @@ export function InstallAppButton({ className = '' }: { className?: string }) {
     )
   }
 
-  if (!showHint || hintDismissed) return null
-
-  return (
-    <div className={`install-app-hint ${className}`.trim()} role="status">
-      <p className="install-app-hint__text">{t('common.installHint')}</p>
-      <button
-        type="button"
-        className="install-app-hint__dismiss"
-        onClick={() => {
-          setHintDismissed(true)
-          try {
-            sessionStorage.setItem('velora-install-hint-dismissed', '1')
-          } catch {
-            /* ignore */
-          }
-        }}
-      >
-        {t('common.close')}
-      </button>
-    </div>
-  )
+  return null
 }

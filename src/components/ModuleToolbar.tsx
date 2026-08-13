@@ -3,6 +3,8 @@ interface FilterOption {
   label: string
 }
 
+import { ReportButton, type ReportType } from './ReportButton'
+
 interface ModuleToolbarProps {
   search: string
   onSearchChange: (value: string) => void
@@ -12,6 +14,8 @@ interface ModuleToolbarProps {
   onFilterChange?: (value: string) => void
   actionLabel?: string
   onAction?: () => void
+  reportType?: ReportType
+  reportLabel?: string
 }
 
 export function ModuleToolbar({
@@ -23,6 +27,8 @@ export function ModuleToolbar({
   onFilterChange,
   actionLabel,
   onAction,
+  reportType,
+  reportLabel,
 }: ModuleToolbarProps) {
   return (
     <div className="module-toolbar">
@@ -53,6 +59,7 @@ export function ModuleToolbar({
           {actionLabel}
         </button>
       )}
+      {reportType && <ReportButton type={reportType} label={reportLabel} />}
     </div>
   )
 }

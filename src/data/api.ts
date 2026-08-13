@@ -78,3 +78,10 @@ export function apiPatch<T>(path: string, body?: unknown): Promise<T> {
 export function apiDelete<T>(path: string): Promise<T> {
   return apiRequest<T>(path, { method: 'DELETE' })
 }
+
+export async function apiDownload(path: string): Promise<Blob> {
+  const accessToken = localStorage.getItem('velora.accessToken') ?? sessionStorage.getItem('velora.accessToken')
+  const response = await fetch(`${API_BASE_URL}${path}`, { headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {} })
+  if (!response.ok) throw new ApiError('PDF raporu oluşturulamadı.', response.status)
+  return response.blob()
+}

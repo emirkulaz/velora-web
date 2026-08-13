@@ -18,7 +18,11 @@ interface Product {
   category: string | null
   color: string | null
   widthCm: number | null
-  unit: 'METER' | 'PIECE' | 'KILOGRAM'
+  unit: 'METER' | 'PIECE'
+  productType: 'COLLAR' | 'BAND' | null
+  yarnType: string | null
+  weightGramPerSaleUnit: number | null
+  yarnPricePerKg: number | null
   costPrice: number | null
   salePrice: number | null
   isActive: boolean
@@ -31,28 +35,36 @@ type ProductForm = {
   code: string
   name: string
   unit: ProductUnit
-  category: string
+  productType: '' | 'COLLAR' | 'BAND'
+  yarnType: string
   color: string
   widthCm: string
   salePrice: string
   costPrice: string
+  weightGramPerSaleUnit: string
+  yarnPricePerKg: string
+  isActive: boolean
 }
 
 const EMPTY_FORM: ProductForm = {
   code: '',
   name: '',
-  unit: 'METER',
-  category: '',
+  unit: 'PIECE',
+  productType: '',
+  yarnType: '',
   color: '',
   widthCm: '',
   salePrice: '',
   costPrice: '',
+  weightGramPerSaleUnit: '',
+  yarnPricePerKg: '',
+  isActive: true,
 }
 
 function unitLabel(unit: ProductUnit) {
   if (unit === 'METER') return 'Metre'
   if (unit === 'PIECE') return 'Adet'
-  return 'Kilogram'
+  return 'Adet'
 }
 
 function stripeBackground(colors: { hex: string }[]): string {
@@ -168,11 +180,15 @@ export function ProductsModule({
       code: product.code,
       name: product.name,
       unit: product.unit,
-      category: product.category ?? '',
+      productType: product.productType ?? (product.unit === 'METER' ? 'BAND' : 'COLLAR'),
+      yarnType: product.yarnType ?? '',
       color: product.color ?? '',
       widthCm: product.widthCm?.toString() ?? '',
       salePrice: product.salePrice?.toString() ?? '',
       costPrice: product.costPrice?.toString() ?? '',
+      weightGramPerSaleUnit: product.weightGramPerSaleUnit?.toString() ?? '',
+      yarnPricePerKg: product.yarnPricePerKg?.toString() ?? '',
+      isActive: product.isActive,
     })
     setFormError('')
     setFormOpen(true)
@@ -181,8 +197,8 @@ export function ProductsModule({
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
     if (!canWrite || saving) return
-    if (!form.code.trim() || !form.name.trim()) {
-      setFormError('Kod ve ürün adı zorunludur.')
+    if (!form.code.trim() || !form.name.trim() || !form.productType || !form.yarnType.trim() || !Number(form.weightGramPerSaleUnit)) {
+      setFormError('Kod, ürün adı, ürün türü, iplik türü ve gramaj zorunludur.')
       return
     }
     setSaving(true)
@@ -193,11 +209,16 @@ export function ProductsModule({
         code: form.code.trim(),
         name: form.name.trim(),
         unit: form.unit,
-        category: form.category.trim() || (editing ? null : undefined),
+        productType: form.productType,
+        yarnType: form.yarnType.trim(),
+        category: form.productType === 'COLLAR' ? 'Yaka' : 'Bant',
         color: form.color.trim() || (editing ? null : undefined),
         widthCm: form.widthCm ? Number(form.widthCm) : editing ? null : undefined,
         salePrice: form.salePrice ? Number(form.salePrice) : editing ? null : undefined,
         costPrice: form.costPrice ? Number(form.costPrice) : editing ? null : undefined,
+        weightGramPerSaleUnit: Number(form.weightGramPerSaleUnit),
+        yarnPricePerKg: form.yarnPricePerKg ? Number(form.yarnPricePerKg) : editing ? null : undefined,
+        isActive: form.isActive,
       }
       if (editing) {
         await apiPatch(`/products/${editing.id}`, payload)
@@ -233,7 +254,7 @@ export function ProductsModule({
 
   const activeCount = products.filter((product) => product.isActive).length
   const criticalCount = products.filter((product) => product.stockQuantity <= 0).length
-  const columnCount = (textile ? 9 : 7) + (canWrite || canDelete ? 1 : 0)
+  const columnCount = (textile ? 10 : 7) + (canWrite || canDelete ? 1 : 0)
 
   return (
     <>
@@ -281,9 +302,9 @@ export function ProductsModule({
                 <th>SKU</th>
                 <th>Ürün Adı</th>
                 {textile && <th>Renk</th>}
-                {textile && <th>En (cm)</th>}
+                {textile && <th>Ürün Türü</th>}
                 <th>Birim</th>
-                <th>Maliyet (DZD)</th>
+                {textile && <th>Gramaj</th>}
                 <th>Satış (DZD)</th>
                 <th>Stok</th>
                 <th>Durum</th>
@@ -300,15 +321,11 @@ export function ProductsModule({
                       <ColorCell product={p} />
                     </td>
                   )}
-                  {textile && (
-                    <td>{p.widthCm != null ? p.widthCm.toLocaleString('tr-TR') : '—'}</td>
-                  )}
+                  {textile && <td>{p.productType === 'COLLAR' ? 'Yaka' : p.productType === 'BAND' ? 'Bant' : '—'}</td>}
                   <td>{unitLabel(p.unit)}</td>
+                  {textile && <td>{p.weightGramPerSaleUnit != null ? `${p.weightGramPerSaleUnit.toLocaleString('tr-TR')} g/${p.unit === 'PIECE' ? 'adet' : 'metre'}` : '—'}</td>}
                   <td className="amount-cell">
-                    {p.costPrice != null ? p.costPrice.toLocaleString('fr-DZ') : '—'}
-                  </td>
-                  <td className="amount-cell">
-                    {p.salePrice != null ? p.salePrice.toLocaleString('fr-DZ') : '—'}
+                    {p.salePrice != null ? `${p.salePrice.toLocaleString('fr-DZ')} DZD/${p.unit === 'PIECE' ? 'adet' : 'metre'}` : '—'}
                   </td>
                   <td>{p.stockQuantity.toLocaleString('tr-TR')}</td>
                   <td>{p.isActive ? 'Aktif' : 'Pasif'}</td>
@@ -383,26 +400,47 @@ export function ProductsModule({
             />
           </label>
           <label>
-            Birim
+            Ürün Türü
             <select
+              required
               dir="ltr"
-              value={form.unit}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, unit: e.target.value as ProductUnit }))
-              }
+              value={form.productType}
+              onChange={(e) => {
+                const productType = e.target.value as ProductForm['productType']
+                setForm((f) => ({ ...f, productType, unit: productType === 'COLLAR' ? 'PIECE' : 'METER' }))
+              }}
             >
-              <option value="METER">Metre</option>
-              <option value="PIECE">Adet</option>
-              <option value="KILOGRAM">Kilogram</option>
+              <option value="" disabled>Yaka veya Bant seçin</option>
+              <option value="COLLAR">Yaka</option>
+              <option value="BAND">Bant</option>
             </select>
           </label>
           <label>
-            Kategori
-            <input
-              dir="ltr"
-              value={form.category}
-              onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-            />
+            Satış birimi
+            <input readOnly value={form.unit === 'PIECE' ? 'Adet' : 'Metre'} />
+          </label>
+          <label>
+            İplik türü
+            <input required dir="ltr" value={form.yarnType} onChange={(e) => setForm((f) => ({ ...f, yarnType: e.target.value }))} />
+          </label>
+          <label>
+            Gramaj ({form.unit === 'PIECE' ? 'g/adet' : 'g/metre'})
+            <input required type="number" min="0.0001" step="0.0001" dir="ltr" value={form.weightGramPerSaleUnit} onChange={(e) => setForm((f) => ({ ...f, weightGramPerSaleUnit: e.target.value }))} />
+          </label>
+          <label>
+            İplik fiyatı (DZD/kg)
+            <input type="number" min="0" step="0.01" dir="ltr" value={form.yarnPricePerKg} onChange={(e) => setForm((f) => ({ ...f, yarnPricePerKg: e.target.value }))} />
+          </label>
+          <label>
+            Mevcut stok ({form.unit === 'PIECE' ? 'adet' : 'metre'})
+            <input readOnly value={(editing?.stockQuantity ?? 0).toLocaleString('tr-TR')} />
+          </label>
+          <label>
+            Stok kg karşılığı
+            <input readOnly value={form.weightGramPerSaleUnit ? `${((Number(form.weightGramPerSaleUnit) * (editing?.stockQuantity ?? 0)) / 1000).toLocaleString('tr-TR')} kg` : '—'} />
+          </label>
+          <label className="check-row">
+            <input type="checkbox" checked={form.isActive} onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))} /> Aktif
           </label>
           <label>
             Renk

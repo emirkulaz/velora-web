@@ -34,7 +34,7 @@ export function renderModule(
 ): ReactElement {
   switch (id) {
     case 'dailyWork':
-      return <DailyWorkModule onNavigate={onNavigate} />
+      return <DailyWorkModule onNavigate={onNavigate} showActions={false} />
     case 'customers':
       return (
         <CustomersModule
@@ -64,8 +64,19 @@ export function renderModule(
           canManageWarehouses={canWriteProducts(role)}
         />
       )
+    case 'yarnInventory':
+      return (
+        <InventoryModule
+          company={company}
+          kind="yarn"
+          canWrite={canWriteStock(role)}
+          canManageWarehouses={canWriteProducts(role)}
+        />
+      )
     case 'production':
-      return <ProductionModule canWrite={canWriteProduction(role)} />
+      return (
+        <ProductionModule company={company} canWrite={canWriteProduction(role)} />
+      )
     case 'costCalculation':
       return <CostCalculationModule canWrite={canWriteProduction(role)} />
     case 'finance':

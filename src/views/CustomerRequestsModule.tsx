@@ -348,6 +348,8 @@ export function CustomerRequestsModule({
         </p>
 
         <ModuleToolbar
+          reportType="requests"
+          reportLabel="Talep Raporu"
           search={query}
           onSearchChange={setQuery}
           searchPlaceholder="Müşteri, ürün veya talep metni ara…"

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ModuleSummary } from '../components/ModuleSummary'
+import { ReportButton } from '../components/ReportButton'
 import { apiGet } from '../data/api'
 import type { MenuId } from '../data/types'
 import { markOpenCustomerRequestCreate } from './CustomerRequestsModule'
@@ -18,14 +19,103 @@ type PendingDelivery = {
   remainingQty: number
 }
 
+const DAILY_ACTIONS: Array<{
+  label: string
+  menu: MenuId
+  hint: string
+  open?: () => void
+}> = [
+  {
+    label: 'Yeni müşteri talebi',
+    menu: 'customerRequests',
+    hint: 'Görüşme / talep kaydı',
+    open: markOpenCustomerRequestCreate,
+  },
+  {
+    label: 'Yeni sipariş',
+    menu: 'orders',
+    hint: 'Sipariş oluştur',
+    open: markOpenOrderCreate,
+  },
+  {
+    label: 'Kasa hareketi',
+    menu: 'finance',
+    hint: 'Günlük kasa',
+    open: markOpenFinanceCash,
+  },
+  {
+    label: 'Tahsilat',
+    menu: 'finance',
+    hint: 'Müşteri tahsilatı',
+    open: markOpenFinanceCollection,
+  },
+  {
+    label: 'Stok hareketi',
+    menu: 'inventory',
+    hint: 'Stok girişi/çıkışı',
+    open: markOpenInventoryMovement,
+  },
+]
+
+/** Hızlı işlemler — AI kutusunun üstünde pinlenir. */
+export function DailyWorkActions({
+  onNavigate,
+}: {
+  onNavigate?: (menuId: MenuId) => void
+}) {
+  return (
+    <section className="panel panel--full daily-work-actions">
+      <div className="panel__header">
+        <h2>Günlük İşler</h2>
+        <ReportButton type="daily-summary" label="Günlük Genel Rapor" />
+      </div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+          gap: 12,
+        }}
+      >
+        {DAILY_ACTIONS.map((action) => (
+          <button
+            key={action.label}
+            type="button"
+            className="btn btn--primary"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-start',
+              gap: 4,
+              padding: '14px 16px',
+              height: 'auto',
+              textAlign: 'left',
+            }}
+            onClick={() => {
+              action.open?.()
+              onNavigate?.(action.menu)
+            }}
+          >
+            <span>{action.label}</span>
+            <span style={{ fontSize: 12, opacity: 0.85, fontWeight: 400 }}>
+              {action.hint}
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 /**
  * ACCOUNTING_OPERATIONS (ve eşdeğer) kullanıcılar için yeniden kullanılabilir günlük iş merkezi.
  * Kişiye özel değil; backend yetkisi olmadan işlem yapılamaz.
  */
 export function DailyWorkModule({
   onNavigate,
+  showActions = true,
 }: {
   onNavigate?: (menuId: MenuId) => void
+  showActions?: boolean
 }) {
   const [openRequests, setOpenRequests] = useState(0)
   const [pendingDeliveries, setPendingDeliveries] = useState<PendingDelivery[]>(
@@ -91,46 +181,15 @@ export function DailyWorkModule({
     }
   }, [])
 
-  const actions: Array<{
-    label: string
-    menu: MenuId
-    hint: string
-    open?: () => void
-  }> = [
-    {
-      label: 'Yeni müşteri talebi',
-      menu: 'customerRequests',
-      hint: 'Görüşme / talep kaydı',
-      open: markOpenCustomerRequestCreate,
-    },
-    {
-      label: 'Yeni sipariş',
-      menu: 'orders',
-      hint: 'Sipariş oluştur',
-      open: markOpenOrderCreate,
-    },
-    {
-      label: 'Kasa hareketi',
-      menu: 'finance',
-      hint: 'Günlük kasa',
-      open: markOpenFinanceCash,
-    },
-    {
-      label: 'Tahsilat',
-      menu: 'finance',
-      hint: 'Müşteri tahsilatı',
-      open: markOpenFinanceCollection,
-    },
-    {
-      label: 'Stok hareketi',
-      menu: 'inventory',
-      hint: 'Stok girişi/çıkışı',
-      open: markOpenInventoryMovement,
-    },
-  ]
-
   return (
     <>
+      {showActions ? <DailyWorkActions onNavigate={onNavigate} /> : null}
+      {error && (
+        <p className="demo-notice" role="alert">
+          {error}
+        </p>
+      )}
+
       <ModuleSummary
         items={[
           { label: 'Açık talepler', value: String(openRequests) },
@@ -143,58 +202,10 @@ export function DailyWorkModule({
         ]}
       />
 
-      <section className="panel panel--full">
-        <div className="panel__header">
-          <h2>Günlük İşler</h2>
-        </div>
-        <p className="empty-state" style={{ marginBottom: 16 }}>
-          Sık kullanılan muhasebe ve operasyon işlemleri. Bordro / vergi modülleri
-          henüz bağlanmadı; ilgili kutular yer tutucudur.
-        </p>
-        {error && (
-          <p className="demo-notice" role="alert">
-            {error}
-          </p>
-        )}
-
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-            gap: 12,
-          }}
-        >
-          {actions.map((action) => (
-            <button
-              key={action.label}
-              type="button"
-              className="btn btn--primary"
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-start',
-                gap: 4,
-                padding: '14px 16px',
-                height: 'auto',
-                textAlign: 'left',
-              }}
-              onClick={() => {
-                action.open?.()
-                onNavigate?.(action.menu)
-              }}
-            >
-              <span>{action.label}</span>
-              <span style={{ fontSize: 12, opacity: 0.85, fontWeight: 400 }}>
-                {action.hint}
-              </span>
-            </button>
-          ))}
-        </div>
-      </section>
-
       <section className="panel panel--full" style={{ marginTop: 16 }}>
         <div className="panel__header">
           <h2>Bekleyen teslimatlar</h2>
+          <ReportButton type="deliveries" label="Teslimat Raporu" />
           <button
             type="button"
             className="btn btn--ghost"
@@ -243,6 +254,7 @@ export function DailyWorkModule({
       <section className="panel panel--full" style={{ marginTop: 16 }}>
         <div className="panel__header">
           <h2>Yaklaşan / bekleyen vergi giderleri</h2>
+          <ReportButton type="expenses" label="Gider Raporu" />
         </div>
         <p className="empty-state">
           Vergi ve gider modülü henüz bağlanmadı. Sahte kayıt gösterilmez.

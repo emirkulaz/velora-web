@@ -27,6 +27,7 @@ const ALL_MENUS: MenuId[] = [
   'products',
   'orders',
   'inventory',
+  'yarnInventory',
   'production',
   'costCalculation',
   'finance',
@@ -41,6 +42,7 @@ const ACCOUNTING_MENUS: MenuId[] = [
   'customerRequests',
   'orders',
   'inventory',
+  'yarnInventory',
   'finance',
   'financeAi',
 ]
@@ -65,6 +67,7 @@ const ROLE_MENUS: Record<AppUserRole, MenuId[]> = {
     'overview',
     'products',
     'inventory',
+    'yarnInventory',
     'production',
     'costCalculation',
     'orders',

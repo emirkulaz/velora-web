@@ -3,6 +3,8 @@ import { Modal } from '../components/Modal'
 import { ModuleSummary } from '../components/ModuleSummary'
 import { ModuleToolbar } from '../components/ModuleToolbar'
 import { ApiError, apiGet, apiPost } from '../data/api'
+import { FinanceDebtsTab } from './FinanceDebtsTab'
+import { CashFlowTab } from './CashFlowTab'
 
 type Amount = number | string
 
@@ -55,6 +57,9 @@ type CashType = 'CASH_IN' | 'CASH_OUT'
 
 const OPEN_CASH_FLAG = 'velora.finance.openCash'
 const OPEN_COLLECTION_FLAG = 'velora.finance.openCollection'
+const FINANCE_TAB_FLAG = 'velora.finance.tab'
+
+type FinanceTab = 'cash' | 'cashflow' | 'receivables' | 'debts' | 'expenses' | 'ledger'
 
 function amount(value: Amount | null | undefined) {
   return Number(value ?? 0)
@@ -96,6 +101,7 @@ function normalizeAccounts(payload: unknown): CashAccountSummary[] {
 }
 
 export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
+  const [tab, setTab] = useState<FinanceTab>('cash')
   const [search, setSearch] = useState('')
   const [ledgerSearch, setLedgerSearch] = useState('')
   const [transactions, setTransactions] = useState<CashTransaction[]>([])
@@ -151,6 +157,39 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
   useEffect(() => {
     void load()
   }, [])
+
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem(FINANCE_TAB_FLAG)
+      if (
+        stored === 'cash' ||
+        stored === 'cashflow' ||
+        stored === 'receivables' ||
+        stored === 'debts' ||
+        stored === 'expenses' ||
+        stored === 'ledger'
+      ) {
+        sessionStorage.removeItem(FINANCE_TAB_FLAG)
+        setTab(stored)
+      }
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  useEffect(() => {
+    if (tab !== 'receivables' || ledgerCustomers.length === 0) return
+    try {
+      const raw = sessionStorage.getItem('velora.finance.receivableCustomerId')
+      if (!raw) return
+      sessionStorage.removeItem('velora.finance.receivableCustomerId')
+      const customerId = Number(raw)
+      const row = ledgerCustomers.find((item) => item.customerId === customerId)
+      if (row) setLedgerSearch(row.customerName)
+    } catch {
+      // ignore
+    }
+  }, [tab, ledgerCustomers])
 
   const resetCashForm = () => {
     setCashType('CASH_IN')
@@ -299,26 +338,65 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
     .filter((row) => row.balance > 0)
     .reduce((sum, row) => sum + row.balance, 0)
   const ledgerMovementCount = ledgerCustomers.reduce((sum, row) => sum + row.transactionCount, 0)
+  const receivableRows = filteredLedger.filter((row) => row.balance > 0)
+  const expenseRows = filteredCash.filter((row) => amount(row.credit) > 0)
 
   return (
     <>
+      <div className="module-tabs" style={{ marginBottom: 16 }}>
+        <button type="button" className={tab === 'cash' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('cash')}>Kasa</button>
+        <button type="button" className={tab === 'cashflow' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('cashflow')}>Nakit Akışı</button>
+        <button type="button" className={tab === 'receivables' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('receivables')}>Alacaklarım</button>
+        <button type="button" className={tab === 'debts' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('debts')}>Borçlarım</button>
+        <button type="button" className={tab === 'expenses' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('expenses')}>Giderler</button>
+        <button type="button" className={tab === 'ledger' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('ledger')}>Cari Hesaplar</button>
+      </div>
+
+      {tab !== 'debts' && tab !== 'cashflow' && (
       <ModuleSummary
         items={[
           { label: 'Kasa Bakiyesi', value: formatAmount(totalBalance), unit: 'DZD' },
           { label: 'Kasa Hareketi', value: String(transactions.length) },
-          { label: 'Cari Alacak', value: formatAmount(totalReceivable), unit: 'DZD' },
+          { label: 'Müşteri Alacağı', value: formatAmount(totalReceivable), unit: 'DZD' },
           { label: 'Cari Hareket', value: String(ledgerMovementCount) },
         ]}
       />
+      )}
 
+      {tab === 'debts' && <FinanceDebtsTab canWrite={canWrite} />}
+      {tab === 'cashflow' && (
+        <CashFlowTab
+          onOpenDebt={(supplierId) => {
+            try {
+              sessionStorage.setItem('velora.finance.debtSupplierId', String(supplierId))
+            } catch {
+              // ignore
+            }
+            setTab('debts')
+          }}
+          onOpenReceivable={(customerId) => {
+            try {
+              sessionStorage.setItem('velora.finance.receivableCustomerId', String(customerId))
+            } catch {
+              // ignore
+            }
+            setTab('receivables')
+          }}
+        />
+      )}
+
+      {tab === 'ledger' && (
       <section className="panel panel--full">
         <div className="panel__header">
           <h2>Cari Hesaplar</h2>
+          <p className="panel__meta">Müşteri carisi — tedarikçi borcu burada değil</p>
           <span className="panel__meta">
             {loading ? 'Yükleniyor…' : `${filteredLedger.length} müşteri`}
           </span>
         </div>
         <ModuleToolbar
+          reportType="cash"
+          reportLabel="Kasa Raporu"
           search={ledgerSearch}
           onSearchChange={setLedgerSearch}
           searchPlaceholder="Müşteri ara..."
@@ -363,7 +441,99 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
           </table>
         </div>
       </section>
+      )}
 
+      {tab === 'receivables' && (
+      <section className="panel panel--full">
+        <div className="panel__header">
+          <h2>Alacaklarım</h2>
+          <span className="panel__meta">Müşterilerin şirkete borcu</span>
+        </div>
+        <ModuleToolbar
+          reportType="ledger"
+          reportLabel="Cari Raporu"
+          search={ledgerSearch}
+          onSearchChange={setLedgerSearch}
+          searchPlaceholder="Müşteri ara..."
+        />
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Müşteri</th>
+                <th>Toplam Satış</th>
+                <th>Toplam Tahsilat</th>
+                <th>Kalan Alacak</th>
+                <th>Son Hareket</th>
+              </tr>
+            </thead>
+            <tbody>
+              {receivableRows.map((row) => (
+                <tr key={row.customerId}>
+                  <td>{row.customerName}</td>
+                  <td className="amount-cell">{formatAmount(row.totalSales)}</td>
+                  <td className="amount-cell">{formatAmount(row.totalPayments)}</td>
+                  <td className="amount-cell">{formatAmount(row.balance)}</td>
+                  <td className="date-cell">{formatDate(row.lastMovementAt)}</td>
+                </tr>
+              ))}
+              {!loading && receivableRows.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="empty-cell">
+                    Açık müşteri alacağı yok.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      )}
+
+      {tab === 'expenses' && (
+      <section className="panel panel--full">
+        <div className="panel__header">
+          <h2>Giderler</h2>
+          <span className="panel__meta">Kasa çıkışları (CASH_OUT)</span>
+        </div>
+        <ModuleToolbar
+          reportType="cash"
+          reportLabel="Kasa Raporu"
+          search={search}
+          onSearchChange={setSearch}
+          searchPlaceholder="Açıklama ara..."
+        />
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Tarih</th>
+                <th>Açıklama</th>
+                <th>Kasa</th>
+                <th>Tutar (DZD)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {expenseRows.map((row) => (
+                <tr key={row.id}>
+                  <td className="date-cell">{new Date(row.transactionAt).toLocaleDateString('tr-TR')}</td>
+                  <td>{row.description}</td>
+                  <td>{row.cashAccount?.name ?? '—'}</td>
+                  <td className="amount-cell">{formatAmount(row.credit)}</td>
+                </tr>
+              ))}
+              {!loading && expenseRows.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="empty-cell">Henüz gider hareketi yok.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      )}
+
+      {tab === 'cash' && (
       <div className="finance-grid">
         <section className="panel panel--full">
           <div className="panel__header">
@@ -384,6 +554,8 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
             )}
           </div>
           <ModuleToolbar
+            reportType="ledger"
+            reportLabel="Cari Raporu"
             search={search}
             onSearchChange={setSearch}
             searchPlaceholder="Açıklama veya kasa hesabı ara..."
@@ -474,6 +646,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
           </div>
         </section>
       </div>
+      )}
 
       <Modal
         open={cashOpen}

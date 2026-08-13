@@ -12,7 +12,6 @@ import {
   type QuickLoginAccount,
 } from '../data/quickLoginAccounts'
 import { useI18n } from '../i18n/I18nProvider'
-import { InstallAppButton } from './InstallAppButton'
 import { LanguageSelector } from './LanguageSelector'
 import { VeloraLogo } from './VeloraLogo'
 import './LoginScreen.css'
@@ -111,7 +110,14 @@ export function LoginScreen({
         <div className="login-panel__language">
           <LanguageSelector />
         </div>
-        <VeloraLogo variant="full" theme="light" className="login-brand" />
+        <div className="login-panel__brand-row">
+          <VeloraLogo variant="full" theme="light" className="login-brand" />
+          <img
+            className="login-panel__emblem"
+            src="/vexor-emblem.png"
+            alt="VEXOR"
+          />
+        </div>
         <div className="login-panel__heading">
           <p className="login-panel__eyebrow">
             {rememberedTrikomex ? `${rememberedCompany.name} · VEXOR ERP` : 'VEXOR ERP'}
@@ -162,8 +168,6 @@ export function LoginScreen({
             {isSubmitting ? t('login.submitting') : t('login.submit')}
           </button>
         </form>
-
-        <InstallAppButton className="install-app-btn--login" />
       </section>
 
       {showQuickLogin && quickAccounts.length > 0 ? (

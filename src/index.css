@@ -50,6 +50,78 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+:root[data-theme='dark'] {
+  --color-bg: #080d1a;
+  --color-surface: #11192a;
+  --color-sidebar: #080d1a;
+  --color-sidebar-hover: #172136;
+  --color-sidebar-active: #24204a;
+  --color-border: #263247;
+  --color-border-light: #1b2638;
+  --color-text: #c1c9d8;
+  --color-text-muted: #8491a8;
+  --color-text-heading: #d8dfeb;
+  --color-text-inverse: #dce4ef;
+  --color-primary: #8b5cf6;
+  --color-primary-light: #211843;
+  --color-primary-dark: #a78bfa;
+  --color-velora: #8b5cf6;
+  --color-velora-light: #a78bfa;
+  --color-success: #34d399;
+  --color-success-bg: #0d302a;
+  --color-warning: #fbbf24;
+  --color-warning-bg: #392b0c;
+  --color-danger: #fb7185;
+  --color-danger-bg: #3a1520;
+  --color-info: #38bdf8;
+  --color-info-bg: #102d42;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .25);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, .3);
+}
+
+/* Koyu modda sabit açık yüzey kullanan yönetici bileşenlerini yumuşat. */
+:root[data-theme='dark'] .executive-kpi,
+:root[data-theme='dark'] .executive-panel,
+:root[data-theme='dark'] .login-panel,
+:root[data-theme='dark'] .login-showcase,
+:root[data-theme='dark'] .report-control__date input {
+  background: #111a2b;
+  border-color: #26344a;
+  color: var(--color-text);
+}
+
+:root[data-theme='dark'] .activity-list button,
+:root[data-theme='dark'] .alert-list button {
+  color: var(--color-text-heading);
+  border-color: #223047;
+}
+
+:root[data-theme='dark'] .activity-list button:hover,
+:root[data-theme='dark'] .alert-list button:hover { background: #172238; }
+
+:root[data-theme='dark'] .login-page,
+:root[data-theme='dark'] .login-showcase { background: #080d1a; }
+
+:root[data-theme='dark'] .ai-command__input,
+:root[data-theme='dark'] textarea.ai-command__input,
+:root[data-theme='dark'] .ai-command__input:focus {
+  background: #0b1323;
+  border-color: #2b3a54;
+  color: #d8dfeb;
+}
+
+:root[data-theme='dark'] .demo-response {
+  background: linear-gradient(135deg, #10192a 0%, #131e31 100%);
+  border-color: #293950;
+}
+
+:root[data-theme='dark'] .demo-response__badge {
+  background: #34265d;
+  color: #d8c7ff;
+}
+
+:root[data-theme='dark'] .ai-command__voice { background: #2d1721; border-color: #6a3544; color: #fda4af; }
+
 *,
 *::before,
 *::after {

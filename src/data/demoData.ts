@@ -19,11 +19,12 @@ export const menuItems: MenuItem[] = [
   { id: 'products', label: 'Ürünler', icon: 'box' },
   { id: 'orders', label: 'Siparişler', icon: 'cart' },
   { id: 'inventory', label: 'Stok', icon: 'warehouse' },
+  { id: 'yarnInventory', label: 'İplik Stoğu', icon: 'warehouse' },
   { id: 'production', label: 'Üretim', icon: 'factory' },
   { id: 'costCalculation', label: 'Maliyet Hesaplama', icon: 'calculator' },
   { id: 'finance', label: 'Finans', icon: 'chart' },
   { id: 'financeAi', label: 'Finans Asistanı', icon: 'spark' },
-  { id: 'users', label: 'Ekip', icon: 'users' },
+  { id: 'users', label: 'Çalışanlar', icon: 'users' },
 ]
 
 export const menuTitles: Record<MenuId, string> = {
@@ -34,11 +35,12 @@ export const menuTitles: Record<MenuId, string> = {
   products: 'Ürünler',
   orders: 'Siparişler',
   inventory: 'Stok',
+  yarnInventory: 'İplik Stoğu',
   production: 'Üretim',
   costCalculation: 'Maliyet Hesaplama',
   finance: 'Finans',
   financeAi: 'Finans Asistanı',
-  users: 'Ekip, maaş ve izin',
+  users: 'Çalışanlar · vardiya, izin ve planlama',
 }
 
 /** Placeholder stats — gerçek API bağlanana kadar sıfır. */

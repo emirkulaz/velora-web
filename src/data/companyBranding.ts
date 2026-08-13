@@ -170,6 +170,6 @@ export function resolveCompanyLogo(
   presentation: CompanyPresentation | null | undefined,
 ): string | null {
   if (presentation?.logo) return presentation.logo
-  if (isRememberedTrikomex(presentation ?? null)) return '/trikomex-logo.png?v=2'
+  if (isRememberedTrikomex(presentation ?? null)) return '/trikomex-logo.png?v=3'
   return null
 }

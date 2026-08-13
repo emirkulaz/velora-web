@@ -21,16 +21,25 @@
   right: 24px;
 }
 
-.language-selector select {
-  min-height: 36px;
-  padding: 0 28px 0 10px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: #fff;
-  color: var(--color-text-heading);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
+.login-panel__language .language-selector__button {
+  min-height: 40px;
+  padding: 0 14px;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.login-panel__brand-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  max-width: 420px;
+}
+
+.login-panel__emblem {
+  width: 88px;
+  height: 88px;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .login-panel .login-brand {
@@ -191,47 +200,6 @@
   border-color: var(--color-primary);
   color: var(--color-primary-dark);
   background: var(--color-primary-light);
-}
-
-.install-app-hint {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-top: 12px;
-  max-width: 360px;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface, #f8fafc);
-}
-
-.install-app-hint__text {
-  margin: 0;
-  flex: 1;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--color-text-muted, #475569);
-}
-
-.install-app-hint__dismiss {
-  flex-shrink: 0;
-  border: 0;
-  background: transparent;
-  color: var(--color-text-muted, #64748b);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 0 2px;
-}
-
-.install-app-hint__dismiss:hover {
-  color: var(--color-text);
-}
-
-.install-app-btn--header.install-app-hint,
-.install-app-hint.install-app-btn--header {
-  margin-top: 0;
-  max-width: 280px;
 }
 
 .demo-login {
@@ -437,5 +405,10 @@
 @media (max-width: 520px) {
   .demo-company-grid {
     grid-template-columns: 1fr;
+  }
+
+  .login-panel__emblem {
+    width: 64px;
+    height: 64px;
   }
 }

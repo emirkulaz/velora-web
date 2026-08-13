@@ -6,6 +6,7 @@ export type MenuId =
   | 'products'
   | 'orders'
   | 'inventory'
+  | 'yarnInventory'
   | 'production'
   | 'costCalculation'
   | 'finance'
