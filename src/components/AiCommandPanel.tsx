@@ -82,10 +82,7 @@ function mapErrorMessage(error: unknown): string {
     return 'Çok fazla istek gönderdiniz. Lütfen bir dakika sonra tekrar deneyin.'
   }
   if (error.status === 503) {
-    return (
-      error.message ||
-      'Yerel asistan şu an kullanılamıyor. Ollama çalışıyor mu kontrol edin.'
-    )
+    return error.message || 'AI asistanına şu anda ulaşılamıyor. Lütfen daha sonra tekrar deneyin.'
   }
   if (error.status === 400 || error.status === 404) {
     return error.message || 'Geçersiz soru. Lütfen metni kontrol edin.'
