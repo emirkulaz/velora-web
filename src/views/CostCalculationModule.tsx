@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { ModuleToolbar } from '../components/ModuleToolbar'
 import { SuccessToast } from '../components/Toast'
 import { ApiError, apiDelete, apiGet, apiPost } from '../data/api'
+import { useI18n } from '../i18n/I18nProvider'
 
 type CostCalculation = {
   id: number
@@ -56,8 +57,8 @@ const EXAMPLE_FORM: FormState = {
   electricityCost: '0',
   packagingCost: '0',
   otherCost: '0',
-  productName: 'Örnek ürün',
-  yarnType: 'Pamuk',
+  productName: '',
+  yarnType: '',
   yarnName: '30/1',
 }
 
@@ -72,34 +73,6 @@ function parseNum(value: string): number {
 function round(value: number, digits: number): number {
   const factor = 10 ** digits
   return Math.round((value + Number.EPSILON) * factor) / factor
-}
-
-function formatDa(value: number, fractionDigits = 2): string {
-  return `${value.toLocaleString('fr-DZ', {
-    minimumFractionDigits: fractionDigits,
-    maximumFractionDigits: fractionDigits,
-  })} DA`
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleString('fr-DZ', {
-    timeZone: 'Africa/Algiers',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function formatVeloraSaleSuggestion(suggestedSalePrice: number): string {
-  const formatted = suggestedSalePrice.toLocaleString('fr-DZ', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
-  return `VEXOR önerisi: Bu ürün için başlangıç satış fiyatı ${formatted} dinar olabilir.`
 }
 
 function computeLive(form: FormState) {
@@ -175,11 +148,13 @@ function computeLive(form: FormState) {
     profitMarginPercent,
     suggestedSalePrice,
     profitOptions,
-    veloraSuggestion: formatVeloraSaleSuggestion(suggestedSalePrice),
   }
 }
 
 export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean }) {
+  const { locale, t, formatDate, formatNumber } = useI18n()
+  const formatDzd = useCallback((value: number, fractionDigits = 2) =>
+    `${formatNumber(value, { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits })} DZD`, [formatNumber])
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [rows, setRows] = useState<CostCalculation[]>([])
   const [search, setSearch] = useState('')
@@ -192,7 +167,7 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
 
   const live = useMemo(() => computeLive(form), [form])
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       const data = await apiGet<CostCalculation[]>('/cost-calculations')
@@ -200,27 +175,28 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
       setError('')
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.message : 'Maliyet hesapları alınamadı.',
+        err instanceof ApiError ? err.message : t('cost.loadError'),
       )
     } finally {
       setLoading(false)
     }
-  }
+  }, [t])
 
   useEffect(() => {
-    void load()
-  }, [])
+    const timer = window.setTimeout(() => void load(), 0)
+    return () => window.clearTimeout(timer)
+  }, [load])
 
   const filtered = useMemo(() => {
-    const q = search.toLocaleLowerCase('tr-TR')
+    const q = search.toLocaleLowerCase(locale)
     if (!q) return rows
     return rows.filter(
       (row) =>
-        row.productName.toLocaleLowerCase('tr-TR').includes(q) ||
-        row.yarnName.toLocaleLowerCase('tr-TR').includes(q) ||
-        row.yarnType.toLocaleLowerCase('tr-TR').includes(q),
+        row.productName.toLocaleLowerCase(locale).includes(q) ||
+        row.yarnName.toLocaleLowerCase(locale).includes(q) ||
+        row.yarnType.toLocaleLowerCase(locale).includes(q),
     )
-  }, [rows, search])
+  }, [locale, rows, search])
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -232,12 +208,12 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
     setFormError('')
 
     if (!live) {
-      setFormError('Sayısal alanları kontrol edin.')
+      setFormError(t('cost.invalidNumbers'))
       return
     }
     if (live.productionQuantity > live.maxProductionQuantity) {
       setFormError(
-        `Üretim adedi maksimum ${live.maxProductionQuantity} olabilir.`,
+        t('cost.maxQuantity', { count: live.maxProductionQuantity }),
       )
       return
     }
@@ -260,11 +236,11 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
         yarnType: form.yarnType.trim() || undefined,
         yarnName: form.yarnName.trim() || undefined,
       })
-      setSuccessNotice('Maliyet / teklif kaydı oluşturuldu.')
+      setSuccessNotice(t('cost.saved'))
       await load()
     } catch (err) {
       setFormError(
-        err instanceof ApiError ? err.message : 'Maliyet hesabı kaydedilemedi.',
+        err instanceof ApiError ? err.message : t('cost.saveError'),
       )
     } finally {
       setSaving(false)
@@ -276,11 +252,11 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
     setSaving(true)
     try {
       await apiDelete(`/cost-calculations/${deleteTarget.id}`)
-      setSuccessNotice('Kayıt silindi.')
+      setSuccessNotice(t('cost.deleted'))
       setDeleteTarget(null)
       await load()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Kayıt silinemedi.')
+      setError(err instanceof ApiError ? err.message : t('cost.deleteError'))
       setDeleteTarget(null)
     } finally {
       setSaving(false)
@@ -293,17 +269,17 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
 
       <section className="panel panel--full">
         <div className="panel__header">
-          <h2>Maliyet Hesaplama</h2>
-          <span className="panel__meta">Para birimi: DA (DZD) · Africa/Algiers</span>
+          <h2>{t('cost.title')}</h2>
+          <span className="panel__meta">{t('cost.meta')}</span>
         </div>
 
         <div className="cost-layout">
           <form className="cost-main" onSubmit={(e) => void handleSave(e)}>
             <fieldset className="cost-section">
-              <legend>İplik (bobin)</legend>
+              <legend>{t('cost.yarnSection')}</legend>
               <div className="cost-form">
                 <label>
-                  Bobin sayısı
+                  {t('cost.bobbinCount')}
                   <input
                     type="number"
                     min={1}
@@ -316,7 +292,7 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
                   />
                 </label>
                 <label>
-                  Bobin gramı
+                  {t('cost.bobbinGrams')}
                   <input
                     type="number"
                     min={0.0001}
@@ -329,7 +305,7 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
                   />
                 </label>
                 <label>
-                  Toplam iplik maliyeti (DA)
+                  {t('cost.totalYarnCost')}
                   <input
                     type="number"
                     min={0}
@@ -342,40 +318,40 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
                   />
                 </label>
                 <label>
-                  İplik türü
+                  {t('cost.yarnType')}
                   <input
                     value={form.yarnType}
                     onChange={(e) => setField('yarnType', e.target.value)}
                     disabled={!canWrite}
-                    placeholder="Opsiyonel"
+                    placeholder={t('cost.optional')}
                   />
                 </label>
                 <label>
-                  İplik numarası
+                  {t('cost.yarnNumber')}
                   <input
                     value={form.yarnName}
                     onChange={(e) => setField('yarnName', e.target.value)}
                     disabled={!canWrite}
-                    placeholder="Opsiyonel"
+                    placeholder={t('cost.optional')}
                   />
                 </label>
               </div>
             </fieldset>
 
             <fieldset className="cost-section">
-              <legend>Ürün ve üretim</legend>
+              <legend>{t('cost.productSection')}</legend>
               <div className="cost-form">
                 <label>
-                  Ürün adı
+                  {t('cost.productName')}
                   <input
                     value={form.productName}
                     onChange={(e) => setField('productName', e.target.value)}
                     disabled={!canWrite}
-                    placeholder="Opsiyonel"
+                    placeholder={t('cost.optional')}
                   />
                 </label>
                 <label>
-                  Ürün gramı
+                  {t('cost.productGrams')}
                   <input
                     type="number"
                     min={0.0001}
@@ -388,7 +364,7 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
                   />
                 </label>
                 <label>
-                  Üretim adedi
+                  {t('cost.productionQuantity')}
                   <input
                     type="number"
                     min={1}
@@ -401,7 +377,7 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
                   />
                 </label>
                 <label>
-                  Satış fiyatı (DA) — opsiyonel
+                  {t('cost.salePrice')}
                   <input
                     type="number"
                     min={0}
@@ -417,10 +393,10 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
             </fieldset>
 
             <fieldset className="cost-section">
-              <legend>Ek giderler / birim (opsiyonel)</legend>
+              <legend>{t('cost.extraSection')}</legend>
               <div className="cost-form">
                 <label>
-                  İşçilik (DA)
+                  {t('cost.labor')}
                   <input
                     type="number"
                     min={0}
@@ -432,7 +408,7 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
                   />
                 </label>
                 <label>
-                  Elektrik (DA)
+                  {t('cost.electricity')}
                   <input
                     type="number"
                     min={0}
@@ -444,7 +420,7 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
                   />
                 </label>
                 <label>
-                  Paketleme (DA)
+                  {t('cost.packaging')}
                   <input
                     type="number"
                     min={0}
@@ -456,7 +432,7 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
                   />
                 </label>
                 <label>
-                  Diğer (DA)
+                  {t('cost.other')}
                   <input
                     type="number"
                     min={0}
@@ -481,72 +457,72 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
                 <button
                   type="button"
                   className="btn btn--ghost"
-                  onClick={() => setForm(EXAMPLE_FORM)}
+                  onClick={() => setForm({ ...EXAMPLE_FORM, productName: t('cost.exampleProduct'), yarnType: t('cost.exampleYarn') })}
                   disabled={saving}
                 >
-                  Örnek senaryo
+                  {t('cost.example')}
                 </button>
                 <button
                   type="submit"
                   className="btn btn--primary"
                   disabled={saving || !live}
                 >
-                  {saving ? 'Kaydediliyor…' : 'Teklifi kaydet'}
+                  {saving ? t('cost.saving') : t('cost.saveQuote')}
                 </button>
               </div>
             )}
           </form>
 
           <aside className="cost-summary" aria-live="polite">
-            <h3>Maliyet Özeti</h3>
+            <h3>{t('cost.summary')}</h3>
             <dl>
               <div>
-                <dt>1. Toplam iplik miktarı</dt>
+                <dt>{t('cost.totalYarn')}</dt>
                 <dd>
                   {live
-                    ? `${live.totalYarnGrams.toLocaleString('fr-DZ')} g (${live.totalYarnKg.toLocaleString('fr-DZ')} kg)`
+                    ? `${formatNumber(live.totalYarnGrams)} g (${formatNumber(live.totalYarnKg)} kg)`
                     : '—'}
                 </dd>
               </div>
               <div>
-                <dt>2. Gram maliyeti</dt>
-                <dd>{live ? formatDa(live.costPerGram, 4) : '—'}</dd>
+                <dt>{t('cost.gramCost')}</dt>
+                <dd>{live ? formatDzd(live.costPerGram, 4) : '—'}</dd>
               </div>
               <div>
-                <dt>3. Ürün başı maliyet</dt>
-                <dd>{live ? formatDa(live.totalCostPerUnit) : '—'}</dd>
+                <dt>{t('cost.unitCost')}</dt>
+                <dd>{live ? formatDzd(live.totalCostPerUnit) : '—'}</dd>
               </div>
               <div>
-                <dt>4. Üretilecek adet</dt>
+                <dt>{t('cost.quantity')}</dt>
                 <dd>
                   {live
-                    ? `${live.productionQuantity.toLocaleString('fr-DZ')} (maks. ${live.maxProductionQuantity.toLocaleString('fr-DZ')})`
+                    ? t('cost.quantityValue', { count: formatNumber(live.productionQuantity), max: formatNumber(live.maxProductionQuantity) })
                     : '—'}
                 </dd>
               </div>
               <div>
-                <dt>5. Toplam maliyet</dt>
-                <dd>{live ? formatDa(live.totalProductionCost) : '—'}</dd>
+                <dt>{t('cost.totalCost')}</dt>
+                <dd>{live ? formatDzd(live.totalProductionCost) : '—'}</dd>
               </div>
               <div>
-                <dt>6. Toplam satış geliri</dt>
+                <dt>{t('cost.totalRevenue')}</dt>
                 <dd>
                   {live?.totalSaleAmount != null
-                    ? formatDa(live.totalSaleAmount)
+                    ? formatDzd(live.totalSaleAmount)
                     : '—'}
                 </dd>
               </div>
               <div className="cost-summary__highlight">
-                <dt>7. Net kâr</dt>
+                <dt>{t('cost.netProfit')}</dt>
                 <dd>
-                  {live?.netProfit != null ? formatDa(live.netProfit) : '—'}
+                  {live?.netProfit != null ? formatDzd(live.netProfit) : '—'}
                 </dd>
               </div>
               <div className="cost-summary__highlight">
-                <dt>8. Kâr marjı</dt>
+                <dt>{t('cost.margin')}</dt>
                 <dd>
                   {live?.profitMarginPercent != null
-                    ? `%${live.profitMarginPercent.toLocaleString('fr-DZ', {
+                    ? `%${formatNumber(live.profitMarginPercent, {
                         maximumFractionDigits: 2,
                       })}`
                     : '—'}
@@ -556,12 +532,12 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
 
             {live && (
               <>
-                <h4 className="cost-summary__sub">Satış fiyatı önerileri</h4>
+                <h4 className="cost-summary__sub">{t('cost.priceSuggestions')}</h4>
                 <table className="cost-profit-table">
                   <thead>
                     <tr>
-                      <th>Kâr</th>
-                      <th>Fiyat</th>
+                      <th>{t('cost.profit')}</th>
+                      <th>{t('cost.price')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -575,13 +551,13 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
                         }
                       >
                         <td>%{opt.marginPercent}</td>
-                        <td dir="ltr">{formatDa(opt.salePrice)}</td>
+                        <td dir="ltr">{formatDzd(opt.salePrice)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
                 <p className="cost-summary__note cost-summary__note--emphasis">
-                  {live.veloraSuggestion}
+                  {t('cost.suggestion', { price: formatDzd(live.suggestedSalePrice) })}
                 </p>
               </>
             )}
@@ -591,15 +567,15 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
 
       <section className="panel panel--full">
         <div className="panel__header">
-          <h2>Geçmiş hesaplamalar</h2>
+          <h2>{t('cost.history')}</h2>
           <span className="panel__meta">
-            {loading ? 'Yükleniyor…' : `${filtered.length} kayıt`}
+            {loading ? t('common.loading') : t('cost.recordCount', { count: filtered.length })}
           </span>
         </div>
         <ModuleToolbar
           search={search}
           onSearchChange={setSearch}
-          searchPlaceholder="Ürün veya iplik ara..."
+          searchPlaceholder={t('cost.search')}
         />
         {error && (
           <p className="demo-notice" role="alert">
@@ -610,14 +586,14 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
           <table className="data-table">
             <thead>
               <tr>
-                <th>Tarih</th>
-                <th>Ürün</th>
-                <th>Bobin</th>
-                <th>Adet</th>
-                <th>Birim maliyet</th>
-                <th>Önerilen satış</th>
-                <th>Satış / kâr</th>
-                {canWrite && <th>İşlem</th>}
+                <th>{t('cost.date')}</th>
+                <th>{t('cost.product')}</th>
+                <th>{t('cost.bobbin')}</th>
+                <th>{t('cost.units')}</th>
+                <th>{t('cost.unitCost')}</th>
+                <th>{t('cost.suggestedSale')}</th>
+                <th>{t('cost.saleProfit')}</th>
+                {canWrite && <th>{t('cost.action')}</th>}
               </tr>
             </thead>
             <tbody>
@@ -625,31 +601,31 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
                 <tr>
                   <td colSpan={canWrite ? 8 : 7} className="empty-cell">
                     {loading
-                      ? 'Yükleniyor…'
-                      : 'Henüz kayıtlı maliyet hesabı yok.'}
+                      ? t('common.loading')
+                      : t('cost.empty')}
                   </td>
                 </tr>
               ) : (
                 filtered.map((row) => (
                   <tr key={row.id}>
-                    <td className="date-cell">{formatDate(row.createdAt)}</td>
+                    <td className="date-cell">{formatDate(row.createdAt, { dateStyle: 'short', timeStyle: 'short' })}</td>
                     <td>{row.productName || '—'}</td>
                     <td dir="ltr">
                       {row.bobbinCount}×{row.bobbinGrams}g
                     </td>
                     <td dir="ltr">
-                      {row.productionQuantity.toLocaleString('fr-DZ')}
+                      {formatNumber(row.productionQuantity)}
                     </td>
                     <td className="amount-cell">
-                      {formatDa(row.totalCostPerUnit)}
+                      {formatDzd(row.totalCostPerUnit)}
                     </td>
                     <td className="amount-cell">
-                      {formatDa(row.suggestedSalePrice)}
+                      {formatDzd(row.suggestedSalePrice)}
                     </td>
                     <td className="amount-cell">
                       {row.salePrice != null
-                        ? `${formatDa(row.salePrice)} / ${
-                            row.netProfit != null ? formatDa(row.netProfit) : '—'
+                        ? `${formatDzd(row.salePrice)} / ${
+                            row.netProfit != null ? formatDzd(row.netProfit) : '—'
                           }`
                         : '—'}
                     </td>
@@ -661,7 +637,7 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
                           disabled={saving}
                           onClick={() => setDeleteTarget(row)}
                         >
-                          Sil
+                          {t('cost.delete')}
                         </button>
                       </td>
                     )}
@@ -675,13 +651,13 @@ export function CostCalculationModule({ canWrite = false }: { canWrite?: boolean
 
       <ConfirmDialog
         open={Boolean(deleteTarget)}
-        title="Kaydı sil"
+        title={t('cost.deleteTitle')}
         message={
           deleteTarget
-            ? `"${deleteTarget.productName || 'Hesaplama'}" kaydı kalıcı olarak silinecek. Devam?`
+            ? t('cost.deleteMessage', { name: deleteTarget.productName || t('cost.calculation') })
             : ''
         }
-        confirmLabel="Sil"
+        confirmLabel={t('cost.delete')}
         onConfirm={() => void handleDelete()}
         onCancel={() => setDeleteTarget(null)}
       />
