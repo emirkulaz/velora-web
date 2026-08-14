@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ModuleSummary } from '../components/ModuleSummary'
 import { ApiError, apiGet } from '../data/api'
+import { useI18n } from '../i18n/I18nProvider'
 
 type Liquidity = 'SAFE' | 'WATCH' | 'RISK'
 
@@ -40,30 +41,14 @@ type CashFlowSnapshot = {
   expectedCollectionsReliable: boolean
 }
 
-const RISK_LABEL: Record<Liquidity, string> = {
-  SAFE: 'Güvenli',
-  WATCH: 'İzle',
-  RISK: 'Risk',
-}
-
-function money(value: number, currency: string) {
-  return `${value.toLocaleString('fr-DZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`
-}
-
-function formatDay(ymd: string) {
-  return new Date(`${ymd}T12:00:00`).toLocaleDateString('tr-TR', {
-    day: 'numeric',
-    month: 'long',
-    timeZone: 'Africa/Algiers',
-  })
-}
-
 function CashFlowChart({
   data,
   currency,
+  label,
 }: {
   data: CashFlowSnapshot['flow']
   currency: string
+  label: string
 }) {
   const w = 720
   const h = 240
@@ -73,7 +58,7 @@ function CashFlowChart({
   const bar = Math.max(2, group * 0.28)
   const ticks = data.filter((_, i) => i === 0 || i === data.length - 1 || i % 7 === 0)
   return (
-    <svg className="executive-chart" viewBox={`0 0 ${w} ${h}`} role="img" aria-label="30 günlük nakit grafiği">
+    <svg className="executive-chart" viewBox={`0 0 ${w} ${h}`} role="img" aria-label={label}>
       {[0, 0.5, 1].map((x) => (
         <line key={x} x1={p} x2={w - p} y1={p + x * (h - p * 2)} y2={p + x * (h - p * 2)} className="chart-grid" />
       ))}
@@ -120,6 +105,9 @@ export function CashFlowTab({
   onOpenDebt?: (supplierId: number) => void
   onOpenReceivable?: (customerId: number) => void
 }) {
+  const { t, formatCurrency, formatDate } = useI18n()
+  const money = (value: number, currency: string) => formatCurrency(value, currency)
+  const formatDay = (ymd: string) => formatDate(`${ymd}T12:00:00`, { day: 'numeric', month: 'long' })
   const [data, setData] = useState<CashFlowSnapshot | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -131,7 +119,7 @@ export function CashFlowTab({
         if (live) setData(snapshot)
       })
       .catch((err) => {
-        if (live) setError(err instanceof ApiError ? err.message : 'Nakit akışı alınamadı.')
+        if (live) setError(err instanceof ApiError ? err.message : t('cashflow.loadError'))
       })
       .finally(() => {
         if (live) setLoading(false)
@@ -139,7 +127,7 @@ export function CashFlowTab({
     return () => {
       live = false
     }
-  }, [])
+  }, [t])
 
   const groupedCalendar = useMemo(() => {
     if (!data) return []
@@ -152,60 +140,58 @@ export function CashFlowTab({
     return [...map.entries()]
   }, [data])
 
-  if (loading) return <p className="demo-notice">Nakit akışı yükleniyor…</p>
-  if (error || !data) return <p className="demo-notice" role="alert">{error || 'Nakit akışı verisi bulunamadı.'}</p>
+  if (loading) return <p className="demo-notice">{t('cashflow.loading')}</p>
+  if (error || !data) return <p className="demo-notice" role="alert">{error || t('cashflow.noData')}</p>
 
   const k = data.kpis
 
   return (
     <section className="panel panel--full cashflow-panel">
       <div className="panel__header">
-        <h2>Nakit Akışı</h2>
-        <p className="panel__meta">Kasa hareketi + tedarikçi vadeleri · sipariş cirosu nakit değildir</p>
+        <h2>{t('cashflow.title')}</h2>
+        <p className="panel__meta">{t('cashflow.subtitle')}</p>
       </div>
 
       <ModuleSummary
         items={[
-          { label: 'Mevcut Nakit', value: money(k.currentCash, data.currency) },
-          { label: 'Son 30 Gün Tahsilat', value: money(k.collections30d, data.currency) },
-          { label: 'Son 30 Gün Gider/Ödeme', value: money(k.outflow30d, data.currency) },
-          { label: 'Önümüzdeki 7 Gün Ödenecek', value: money(k.upcomingPayments7d, data.currency) },
-          { label: 'Vadesi Geçmiş Borç', value: money(k.overdueDebt, data.currency) },
-          { label: 'Net Nakit Değişimi', value: money(k.netCashChange30d, data.currency) },
+          { label: t('cashflow.currentCash'), value: money(k.currentCash, data.currency) },
+          { label: t('cashflow.collections30d'), value: money(k.collections30d, data.currency) },
+          { label: t('cashflow.outflow30d'), value: money(k.outflow30d, data.currency) },
+          { label: t('cashflow.upcoming7d'), value: money(k.upcomingPayments7d, data.currency) },
+          { label: t('cashflow.overdueDebt'), value: money(k.overdueDebt, data.currency) },
+          { label: t('cashflow.netChange'), value: money(k.netCashChange30d, data.currency) },
         ]}
       />
 
       <article className={`cashflow-liquidity cashflow-liquidity--${k.liquidity}`}>
         <div>
-          <span>7 günlük likidite tahmini</span>
+          <span>{t('cashflow.forecast')}</span>
           <strong>{money(k.projectedCash7d, data.currency)}</strong>
           <small>
-            Mevcut nakit {money(k.currentCash, data.currency)} − bilinen ödemeler{' '}
-            {money(k.upcomingPayments7d, data.currency)}
             {k.expectedCollections7d != null
-              ? ` + doğrulanmış tahsilat ${money(k.expectedCollections7d, data.currency)}`
-              : ' · doğrulanmamış tahsilat dahil edilmedi'}
+              ? t('cashflow.forecastWithCollection', { cash: money(k.currentCash, data.currency), payments: money(k.upcomingPayments7d, data.currency), collections: money(k.expectedCollections7d, data.currency) })
+              : t('cashflow.forecastWithoutCollection', { cash: money(k.currentCash, data.currency), payments: money(k.upcomingPayments7d, data.currency) })}
           </small>
         </div>
-        <b>{RISK_LABEL[k.liquidity]}</b>
+        <b>{t(`cashflow.risk.${k.liquidity}`)}</b>
       </article>
 
       <section className="cashflow-section">
         <header>
-          <h3>30 günlük gerçek nakit</h3>
+          <h3>{t('cashflow.actual30d')}</h3>
           <div className="chart-legend">
-            <i className="legend-income" /> Para girişi
-            <i className="legend-expense" /> Para çıkışı
-            <span className="cashflow-net-legend">Net değişim</span>
+            <i className="legend-income" /> {t('cashflow.inflow')}
+            <i className="legend-expense" /> {t('cashflow.outflow')}
+            <span className="cashflow-net-legend">{t('cashflow.net')}</span>
           </div>
         </header>
-        <CashFlowChart data={data.flow} currency={data.currency} />
+        <CashFlowChart data={data.flow} currency={data.currency} label={t('cashflow.chartLabel')} />
       </section>
 
       <section className="cashflow-section">
-        <h3>7 günlük ödeme takvimi</h3>
+        <h3>{t('cashflow.calendar7d')}</h3>
         {groupedCalendar.length === 0 ? (
-          <p className="empty-state">Önümüzdeki 7 günde vadesi gelen tedarikçi ödemesi yok.</p>
+          <p className="empty-state">{t('cashflow.noUpcoming')}</p>
         ) : (
           groupedCalendar.map(([dueDate, rows]) => (
             <div className="cashflow-calendar__day" key={dueDate}>
@@ -224,7 +210,7 @@ export function CashFlowTab({
                           <div className="panel__meta">
                             {[row.orderNo, row.goodsReceiptId ? `GR #${row.goodsReceiptId}` : null]
                               .filter(Boolean)
-                              .join(' · ') || 'Tedarikçi borcu'}
+                              .join(' · ') || t('cashflow.supplierDebt')}
                           </div>
                         </td>
                         <td>{money(row.amount, data.currency)}</td>
@@ -239,17 +225,17 @@ export function CashFlowTab({
       </section>
 
       <section className="cashflow-section">
-        <h3>Beklenen tahsilat</h3>
+        <h3>{t('cashflow.expected')}</h3>
         {!data.expectedCollectionsReliable || data.expectedCollections.length === 0 ? (
-          <p className="demo-notice">{data.expectedCollectionsNotice}</p>
+          <p className="demo-notice">{t('cashflow.noticeUnavailable')}</p>
         ) : (
           <div className="table-wrap">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Tarih</th>
-                  <th>Müşteri</th>
-                  <th>Tutar</th>
+                  <th>{t('cashflow.date')}</th>
+                  <th>{t('cashflow.customer')}</th>
+                  <th>{t('cashflow.amount')}</th>
                 </tr>
               </thead>
               <tbody>
