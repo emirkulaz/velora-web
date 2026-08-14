@@ -10,6 +10,7 @@ import {
 } from './financeActions'
 import { markOpenInventoryMovement } from './inventoryActions'
 import { markOpenOrderCreate } from './orderActions'
+import { useI18n } from '../i18n/I18nProvider'
 
 type PendingDelivery = {
   id: number
@@ -20,39 +21,39 @@ type PendingDelivery = {
 }
 
 const DAILY_ACTIONS: Array<{
-  label: string
+  labelKey: string
   menu: MenuId
-  hint: string
+  hintKey: string
   open?: () => void
 }> = [
   {
-    label: 'Yeni müşteri talebi',
+    labelKey: 'daily.action.request',
     menu: 'customerRequests',
-    hint: 'Görüşme / talep kaydı',
+    hintKey: 'daily.hint.request',
     open: markOpenCustomerRequestCreate,
   },
   {
-    label: 'Yeni sipariş',
+    labelKey: 'daily.action.order',
     menu: 'orders',
-    hint: 'Sipariş oluştur',
+    hintKey: 'daily.hint.order',
     open: markOpenOrderCreate,
   },
   {
-    label: 'Kasa hareketi',
+    labelKey: 'daily.action.cash',
     menu: 'finance',
-    hint: 'Günlük kasa',
+    hintKey: 'daily.hint.cash',
     open: markOpenFinanceCash,
   },
   {
-    label: 'Tahsilat',
+    labelKey: 'daily.action.collection',
     menu: 'finance',
-    hint: 'Müşteri tahsilatı',
+    hintKey: 'daily.hint.collection',
     open: markOpenFinanceCollection,
   },
   {
-    label: 'Stok hareketi',
+    labelKey: 'daily.action.stock',
     menu: 'inventory',
-    hint: 'Stok girişi/çıkışı',
+    hintKey: 'daily.hint.stock',
     open: markOpenInventoryMovement,
   },
 ]
@@ -63,11 +64,12 @@ export function DailyWorkActions({
 }: {
   onNavigate?: (menuId: MenuId) => void
 }) {
+  const { t } = useI18n()
   return (
     <section className="panel panel--full daily-work-actions">
       <div className="panel__header">
-        <h2>Günlük İşler</h2>
-        <ReportButton type="daily-summary" label="Günlük Genel Rapor" />
+        <h2>{t('daily.title')}</h2>
+        <ReportButton type="daily-summary" label={t('daily.report')} />
       </div>
       <div
         style={{
@@ -78,7 +80,7 @@ export function DailyWorkActions({
       >
         {DAILY_ACTIONS.map((action) => (
           <button
-            key={action.label}
+            key={action.labelKey}
             type="button"
             className="btn btn--primary"
             style={{
@@ -95,9 +97,9 @@ export function DailyWorkActions({
               onNavigate?.(action.menu)
             }}
           >
-            <span>{action.label}</span>
+            <span>{t(action.labelKey)}</span>
             <span style={{ fontSize: 12, opacity: 0.85, fontWeight: 400 }}>
-              {action.hint}
+              {t(action.hintKey)}
             </span>
           </button>
         ))}
@@ -117,6 +119,7 @@ export function DailyWorkModule({
   onNavigate?: (menuId: MenuId) => void
   showActions?: boolean
 }) {
+  const { t, formatNumber } = useI18n()
   const [openRequests, setOpenRequests] = useState(0)
   const [pendingDeliveries, setPendingDeliveries] = useState<PendingDelivery[]>(
     [],
@@ -173,13 +176,13 @@ export function DailyWorkModule({
             .slice(0, 8),
         )
       } catch {
-        if (!cancelled) setError('Günlük özet yüklenemedi.')
+        if (!cancelled) setError(t('daily.loadError'))
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [t])
 
   return (
     <>
@@ -192,39 +195,39 @@ export function DailyWorkModule({
 
       <ModuleSummary
         items={[
-          { label: 'Açık talepler', value: String(openRequests) },
+          { label: t('daily.openRequests'), value: String(openRequests) },
           {
-            label: 'Bekleyen teslimat',
+            label: t('daily.pendingDeliveries'),
             value: String(pendingDeliveries.length),
           },
-          { label: 'Kontrol bekleyen bordro', value: '—' },
-          { label: 'Bekleyen vergi/gider', value: '—' },
+          { label: t('daily.payrollReview'), value: '—' },
+          { label: t('daily.pendingExpense'), value: '—' },
         ]}
       />
 
       <section className="panel panel--full" style={{ marginTop: 16 }}>
         <div className="panel__header">
-          <h2>Bekleyen teslimatlar</h2>
-          <ReportButton type="deliveries" label="Teslimat Raporu" />
+          <h2>{t('daily.deliveriesTitle')}</h2>
+          <ReportButton type="deliveries" label={t('daily.deliveryReport')} />
           <button
             type="button"
             className="btn btn--ghost"
             onClick={() => onNavigate?.('orders')}
           >
-            Siparişlere git
+            {t('daily.goOrders')}
           </button>
         </div>
         {pendingDeliveries.length === 0 ? (
-          <p className="empty-state">Bekleyen teslimat yok veya sipariş API’si henüz uygulanmadı.</p>
+          <p className="empty-state">{t('daily.noDeliveries')}</p>
         ) : (
           <div className="table-wrap">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Sipariş</th>
-                  <th>Müşteri</th>
-                  <th>Durum</th>
-                  <th>Kalan miktar</th>
+                  <th>{t('daily.order')}</th>
+                  <th>{t('daily.customer')}</th>
+                  <th>{t('daily.status')}</th>
+                  <th>{t('daily.remaining')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -232,8 +235,8 @@ export function DailyWorkModule({
                   <tr key={row.id}>
                     <td>{row.orderNumber}</td>
                     <td>{row.customerName ?? '—'}</td>
-                    <td>{row.status}</td>
-                    <td>{row.remainingQty}</td>
+                    <td>{t(`orders.status.${row.status}`)}</td>
+                    <td>{formatNumber(row.remainingQty)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -244,20 +247,20 @@ export function DailyWorkModule({
 
       <section className="panel panel--full" style={{ marginTop: 16 }}>
         <div className="panel__header">
-          <h2>Kontrol bekleyen bordrolar</h2>
+          <h2>{t('daily.payrollTitle')}</h2>
         </div>
         <p className="empty-state">
-          Bordro modülü henüz bağlanmadı. Sahte kayıt gösterilmez.
+          {t('daily.payrollUnavailable')}
         </p>
       </section>
 
       <section className="panel panel--full" style={{ marginTop: 16 }}>
         <div className="panel__header">
-          <h2>Yaklaşan / bekleyen vergi giderleri</h2>
-          <ReportButton type="expenses" label="Gider Raporu" />
+          <h2>{t('daily.expenseTitle')}</h2>
+          <ReportButton type="expenses" label={t('daily.expenseReport')} />
         </div>
         <p className="empty-state">
-          Vergi ve gider modülü henüz bağlanmadı. Sahte kayıt gösterilmez.
+          {t('daily.expenseUnavailable')}
         </p>
       </section>
     </>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ApiError, apiGet } from '../data/api'
+import { useI18n } from '../i18n/I18nProvider'
 
 type RateTrend = 'up' | 'down' | 'flat'
 
@@ -43,62 +44,34 @@ const PAIR_LABEL: Record<ExchangePairQuote['pair'], string> = {
   DZD: 'DZD',
 }
 
-function formatRate(value: number): string {
-  return value.toLocaleString('tr-TR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 4,
-  })
-}
-
-function formatChange(changePercent: number | null): string {
-  if (changePercent == null) return '—'
-  const abs = Math.abs(changePercent).toLocaleString('tr-TR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
-  if (changePercent > 0) return `+${abs}%`
-  if (changePercent < 0) return `-${abs}%`
-  return `${abs}%`
-}
-
-function formatFetchedAt(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return '—'
-  return date.toLocaleString('tr-TR', {
-    timeZone: 'Africa/Algiers',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
 function TrendMark({ trend }: { trend: RateTrend }) {
+  const { t } = useI18n()
   if (trend === 'up') {
     return (
-      <span className="fx-ticker__trend fx-ticker__trend--up" aria-label="Yükseliş">
+      <span className="fx-ticker__trend fx-ticker__trend--up" aria-label={t('fx.trend.up')}>
         ▲
       </span>
     )
   }
   if (trend === 'down') {
     return (
-      <span className="fx-ticker__trend fx-ticker__trend--down" aria-label="Düşüş">
+      <span className="fx-ticker__trend fx-ticker__trend--down" aria-label={t('fx.trend.down')}>
         ▼
       </span>
     )
   }
   return (
-    <span className="fx-ticker__trend fx-ticker__trend--flat" aria-label="Değişim yok">
+    <span className="fx-ticker__trend fx-ticker__trend--flat" aria-label={t('fx.trend.flat')}>
       —
     </span>
   )
 }
 
 function RateValue({ pair }: { pair: ExchangePairQuote }) {
+  const { t, formatNumber } = useI18n()
+  const formatRate = (value: number) => formatNumber(value, { minimumFractionDigits: 2, maximumFractionDigits: 4 })
   if (pair.pair === 'DZD') {
-    return <span className="fx-ticker__value">1,00</span>
+    return <span className="fx-ticker__value">{formatNumber(1, { minimumFractionDigits: 2 })}</span>
   }
 
   const company =
@@ -106,7 +79,7 @@ function RateValue({ pair }: { pair: ExchangePairQuote }) {
   const bank = pair.bankValue == null ? '—' : formatRate(pair.bankValue)
 
   return (
-    <span className="fx-ticker__value" title="Şirket kuru / Banka kuru (DZD)">
+    <span className="fx-ticker__value" title={t('fx.rateTitle')}>
       <span className="fx-ticker__company">{company}</span>
       <span className="fx-ticker__slash"> / </span>
       <span className="fx-ticker__bank">{bank}</span>
@@ -116,6 +89,12 @@ function RateValue({ pair }: { pair: ExchangePairQuote }) {
 }
 
 export function ExchangeRateTicker() {
+  const { t, formatDate, formatNumber } = useI18n()
+  const formatChange = (changePercent: number | null) => {
+    if (changePercent == null) return '—'
+    const abs = formatNumber(Math.abs(changePercent), { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    return `${changePercent > 0 ? '+' : changePercent < 0 ? '-' : ''}${abs}%`
+  }
   const [data, setData] = useState<LiveExchangeRatesResponse | null>(null)
   const [error, setError] = useState('')
   const dataRef = useRef<LiveExchangeRatesResponse | null>(null)
@@ -137,7 +116,7 @@ export function ExchangeRateTicker() {
           setError(
             err instanceof ApiError
               ? err.message
-              : 'Döviz kurları şu an alınamıyor.',
+              : t('fx.unavailable'),
           )
         })
     }
@@ -148,14 +127,14 @@ export function ExchangeRateTicker() {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [])
+  }, [t])
 
   if (error && !data) {
     return (
-      <section className="fx-ticker fx-ticker--empty" aria-label="Döviz şeridi">
+      <section className="fx-ticker fx-ticker--empty" aria-label={t('fx.label')}>
         <p className="fx-ticker__empty">{error}</p>
         <p className="fx-ticker__disclaimer">
-          TRIKOMEX kuru · Bilgilendirme amaçlıdır
+          {t('fx.disclaimer')}
         </p>
       </section>
     )
@@ -163,8 +142,8 @@ export function ExchangeRateTicker() {
 
   if (!data) {
     return (
-      <section className="fx-ticker fx-ticker--loading" aria-label="Döviz şeridi">
-        <p className="fx-ticker__empty">Döviz kurları yükleniyor…</p>
+      <section className="fx-ticker fx-ticker--loading" aria-label={t('fx.label')}>
+        <p className="fx-ticker__empty">{t('fx.loading')}</p>
       </section>
     )
   }
@@ -172,13 +151,13 @@ export function ExchangeRateTicker() {
   const items = data.pairs.length > 0 ? data.pairs : []
 
   return (
-    <section className="fx-ticker" aria-label="Döviz şeridi" dir="ltr">
+    <section className="fx-ticker" aria-label={t('fx.label')} dir="ltr">
       <div className="fx-ticker__meta">
-        <span className="fx-ticker__brand">Döviz</span>
+        <span className="fx-ticker__brand">{t('fx.brand')}</span>
         <span className="fx-ticker__updated">
-          Tarih / Saat: {formatFetchedAt(data.fetchedAt)}
-          {data.stale ? ' · önbellek' : ''}
-          {data.bankAvailable ? '' : ' · banka bekleniyor'}
+          {t('fx.updated')}: {formatDate(data.fetchedAt, { dateStyle: 'short', timeStyle: 'short' })}
+          {data.stale ? ` · ${t('fx.cache')}` : ''}
+          {data.bankAvailable ? '' : ` · ${t('fx.bankPending')}`}
         </span>
       </div>
 
@@ -202,7 +181,7 @@ export function ExchangeRateTicker() {
                       {formatChange(pair.changePercent)}
                     </span>
                   ) : (
-                    <span className="fx-ticker__previous">baz para</span>
+                    <span className="fx-ticker__previous">{t('fx.base')}</span>
                   )}
                 </li>
               ))}
@@ -211,7 +190,7 @@ export function ExchangeRateTicker() {
         </div>
       </div>
 
-      <p className="fx-ticker__disclaimer">{data.disclaimer}</p>
+      <p className="fx-ticker__disclaimer">{t('fx.disclaimer')}</p>
     </section>
   )
 }

@@ -15,11 +15,11 @@ startEnforceLtrFields(document)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AppErrorBoundary>
-      <I18nProvider>
+    <I18nProvider>
+      <AppErrorBoundary>
         <App />
         <PwaUpdatePrompt />
-      </I18nProvider>
-    </AppErrorBoundary>
+      </AppErrorBoundary>
+    </I18nProvider>
   </StrictMode>,
 )

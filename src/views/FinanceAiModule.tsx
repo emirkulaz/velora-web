@@ -3,6 +3,7 @@ import { ApiError, apiRequest } from '../data/api'
 import { algiersYmd } from '../data/dates'
 import { useSpeechToText } from '../hooks/useSpeechToText'
 import { Icon } from '../components/Icons'
+import { useI18n } from '../i18n/I18nProvider'
 
 type ChatRole = 'user' | 'assistant'
 
@@ -26,29 +27,6 @@ interface FinanceChatResponse {
   disclaimer: string
 }
 
-const QUICK_PROMPTS = [
-  'Kasa durumunu özetle',
-  'Bu ay en büyük giderler neler?',
-  'Son 30 günde olağan dışı hareket var mı?',
-  'En büyük tahsilatlar hangileri?',
-  'Kasa neden azalmış olabilir?',
-]
-
-const DISCLAIMER =
-  'VEXOR AI analiz amaçlıdır. Kesin muhasebe kararı vermeden önce kayıtları kontrol edin.'
-
-function formatAlgiers(iso?: string | null) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString('tr-TR', {
-    timeZone: 'Africa/Algiers',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
 function todayIso() {
   return algiersYmd()
 }
@@ -60,6 +38,8 @@ function daysAgoIso(days: number) {
 }
 
 export function FinanceAiModule() {
+  const { t, formatDate } = useI18n()
+  const quickPrompts = ['cash', 'expenses', 'unusual', 'collections', 'decrease'].map((key) => t(`financeAi.quick.${key}`))
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [dateFrom, setDateFrom] = useState(daysAgoIso(30))
@@ -79,7 +59,7 @@ export function FinanceAiModule() {
 
     const payloadKey = `${message}|${dateFrom}|${dateTo}`
     if (payloadKey === lastPayloadRef.current) {
-      setError('Aynı soruyu art arda göndermeyin. Tarihi veya metni değiştirin.')
+      setError(t('financeAi.duplicate'))
       return
     }
 
@@ -123,24 +103,24 @@ export function FinanceAiModule() {
     } catch (err) {
       const status = err instanceof ApiError ? err.status : 0
       if (status === 401) {
-        setError('Oturumunuz sona ermiş olabilir. Lütfen yeniden giriş yapın.')
+        setError(t('financeAi.unauthorized'))
       } else if (status === 403) {
-        setError('Bu alana erişim yetkiniz yok.')
+        setError(t('financeAi.forbidden'))
       } else if (status === 429) {
-        setError('Çok fazla istek gönderdiniz. Lütfen bir dakika bekleyin.')
+        setError(t('financeAi.rateLimit'))
       } else if (status === 503) {
         setError(
           err instanceof ApiError && err.message
             ? err.message
-            : 'Finans asistanı şu an kullanılamıyor. Yapılandırmayı kontrol edin.',
+            : t('financeAi.unavailable'),
         )
       } else if (status === 400) {
-        setError(err instanceof ApiError ? err.message : 'Geçersiz istek.')
+        setError(err instanceof ApiError ? err.message : t('financeAi.invalid'))
       } else {
         setError(
           err instanceof ApiError
             ? err.message
-            : 'Yanıt alınamadı. API bağlantısını kontrol edin.',
+            : t('financeAi.error'),
         )
       }
     } finally {
@@ -164,16 +144,16 @@ export function FinanceAiModule() {
     <section className="panel panel--full finance-ai">
       <div className="panel__header">
         <div>
-          <h2>Finans Asistanı</h2>
+          <h2>{t('financeAi.title')}</h2>
           <p className="finance-ai__subtitle">
-            Salt-okunur analiz. Kayıt eklemez, güncellemez veya silmez.
+            {t('financeAi.subtitle')}
           </p>
         </div>
       </div>
 
       <div className="finance-ai__filters">
         <label>
-          Başlangıç
+          {t('financeAi.from')}
           <input
             type="date"
             value={dateFrom}
@@ -184,7 +164,7 @@ export function FinanceAiModule() {
           />
         </label>
         <label>
-          Bitiş
+          {t('financeAi.to')}
           <input
             type="date"
             value={dateTo}
@@ -197,7 +177,7 @@ export function FinanceAiModule() {
       </div>
 
       <div className="finance-ai__quick">
-        {QUICK_PROMPTS.map((prompt) => (
+        {quickPrompts.map((prompt) => (
           <button
             key={prompt}
             type="button"
@@ -213,7 +193,7 @@ export function FinanceAiModule() {
       <div className="finance-ai__thread" ref={listRef}>
         {messages.length === 0 && (
           <div className="finance-ai__empty">
-            Kasa, tahsilat veya giderler hakkında sorun. Rakamlar backend tarafından hesaplanır.
+            {t('financeAi.empty')}
           </div>
         )}
         {messages.map((msg) => (
@@ -226,15 +206,15 @@ export function FinanceAiModule() {
             }
           >
             <div className="finance-ai__bubble-label">
-              {msg.role === 'user' ? 'Siz' : 'VEXOR AI'}
+              {msg.role === 'user' ? t('financeAi.you') : 'VEXOR AI'}
             </div>
             <div className="finance-ai__bubble-body">{msg.content}</div>
             {msg.role === 'assistant' && (
               <div className="finance-ai__meta">
-                Aralık: {msg.dateFrom ?? '—'} → {msg.dateTo ?? '—'} · Veri:{' '}
-                {formatAlgiers(msg.dataFreshness)}
+                {t('financeAi.range')}: {msg.dateFrom ?? '—'} → {msg.dateTo ?? '—'} · {t('financeAi.data')}:{' '}
+                {msg.dataFreshness ? formatDate(msg.dataFreshness, { dateStyle: 'medium', timeStyle: 'short' }) : '—'}
                 {typeof msg.recordsUsed === 'number'
-                  ? ` · ${msg.recordsUsed} kayıt özeti`
+                  ? ` · ${t('financeAi.records', { count: msg.recordsUsed })}`
                   : ''}
               </div>
             )}
@@ -242,7 +222,7 @@ export function FinanceAiModule() {
         ))}
         {loading && (
           <div className="finance-ai__bubble finance-ai__bubble--assistant finance-ai__bubble--loading">
-            Analiz hazırlanıyor…
+            {t('financeAi.analyzing')}
           </div>
         )}
       </div>
@@ -260,7 +240,7 @@ export function FinanceAiModule() {
           onKeyDown={onKeyDown}
           rows={2}
           maxLength={1000}
-          placeholder="Örn. Bu ay kasanın durumunu özetle"
+          placeholder={t('financeAi.placeholder')}
           disabled={loading}
         />
         <div className="finance-ai__composer-actions">
@@ -270,24 +250,24 @@ export function FinanceAiModule() {
             onClick={voice.isListening ? voice.stop : voice.start}
             disabled={!voice.isSupported || loading}
             aria-pressed={voice.isListening}
-            aria-label={voice.isListening ? 'Dinlemeyi durdur' : 'Konuşarak yaz'}
+            aria-label={voice.isListening ? t('ai.stopListening') : t('ai.speak')}
             title={
               voice.isSupported
                 ? voice.isListening
-                  ? 'Dinlemeyi durdur'
-                  : 'Konuşarak yaz'
-                : 'Tarayıcınız sesli girişi desteklemiyor'
+                  ? t('ai.stopListening')
+                  : t('ai.speak')
+                : t('ai.speechUnsupported')
             }
           >
             <Icon name="microphone" />
           </button>
           <button type="submit" disabled={loading || !input.trim()}>
-            Gönder
+            {t('financeAi.send')}
           </button>
         </div>
       </form>
 
-      <p className="finance-ai__disclaimer">{DISCLAIMER}</p>
+      <p className="finance-ai__disclaimer">{t('financeAi.disclaimer')}</p>
     </section>
   )
 }
