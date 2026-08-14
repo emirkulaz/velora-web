@@ -8,7 +8,7 @@ import {
   markOpenFinanceCash,
   markOpenFinanceCollection,
 } from './FinanceModule'
-import { markOpenInventoryMovement } from './InventoryModule'
+import { markOpenInventoryMovement } from './inventoryActions'
 import { markOpenOrderCreate } from './orderActions'
 
 type PendingDelivery = {

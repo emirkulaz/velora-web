@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Modal } from '../components/Modal'
 import { ModuleSummary } from '../components/ModuleSummary'
 import { ModuleToolbar } from '../components/ModuleToolbar'
@@ -8,6 +8,8 @@ import {
   isTextileCompany,
   type CompanyPresentation,
 } from '../data/companyBranding'
+import { useI18n } from '../i18n/I18nProvider'
+import { OPEN_INVENTORY_MOVEMENT_FLAG } from './inventoryActions'
 
 interface StockBalance {
   productId: number
@@ -50,25 +52,6 @@ type WarehouseOption = {
 type StockAction = 'INBOUND' | 'OUTBOUND'
 type MovementKind = 'finished' | 'yarn'
 
-const OPEN_MOVEMENT_FLAG = 'velora.inventory.openMovement'
-
-function unitLabel(unit: StockBalance['unit']) {
-  if (unit === 'METER') return 'Metre'
-  if (unit === 'PIECE') return 'Adet'
-  return 'Kilogram'
-}
-
-function formatQty(value: number) {
-  return value.toLocaleString('tr-TR', { maximumFractionDigits: 3 })
-}
-
-function formatMoney(value: number) {
-  return value.toLocaleString('fr-DZ', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
-}
-
 function yarnKindLabel(item: StockBalance) {
   return item.yarnType || item.category || item.productType || '—'
 }
@@ -84,12 +67,15 @@ export function InventoryModule({
   canWrite?: boolean
   canManageWarehouses?: boolean
 }) {
+  const { locale, t, formatNumber } = useI18n()
+  const formatQty = (value: number) =>
+    formatNumber(value, { maximumFractionDigits: 3 })
+  const formatMoney = (value: number) =>
+    formatNumber(value, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const textile = isTextileCompany(company)
   const isYarnInventory = kind === 'yarn'
-  const inventoryLabel = isYarnInventory ? 'İplik Stoğu' : 'Stok'
-  const inventoryLede = isYarnInventory
-    ? 'Üretimde kullanılan iplik ve diğer kilogram bazlı hammaddelerin stok takibi.'
-    : 'Satışa veya üretime hazır ürünlerin adet/metre bazlı stok takibi.'
+  const inventoryLabel = t(`inventory.title.${kind}`)
+  const inventoryLede = t(`inventory.lede.${kind}`)
   const [search, setSearch] = useState('')
   const [balances, setBalances] = useState<StockBalance[]>([])
   const [products, setProducts] = useState<ProductOption[]>([])
@@ -115,20 +101,20 @@ export function InventoryModule({
   const [warehouseName, setWarehouseName] = useState('')
   const [warehouseAddress, setWarehouseAddress] = useState('')
 
-  const loadBalances = async () => {
+  const loadBalances = useCallback(async () => {
     setLoading(true)
     try {
       const rows = await apiGet<StockBalance[]>(`/stock/balances?kind=${kind}`)
       setBalances(rows)
       setError('')
     } catch {
-      setError('Stok verileri alınamadı.')
+      setError(t('inventory.loadError'))
     } finally {
       setLoading(false)
     }
-  }
+  }, [kind, t])
 
-  const loadSelectOptions = async () => {
+  const loadSelectOptions = useCallback(async () => {
     try {
       const [productRows, warehouseRows] = await Promise.all([
         apiGet<ProductOption[]>('/products'),
@@ -152,12 +138,15 @@ export function InventoryModule({
     } catch {
       // Selects stay empty; form will show notice if needed.
     }
-  }
+  }, [])
 
   useEffect(() => {
-    void loadBalances()
-    void loadSelectOptions()
-  }, [kind, isYarnInventory])
+    const timeoutId = window.setTimeout(() => {
+      void loadBalances()
+      void loadSelectOptions()
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [loadBalances, loadSelectOptions])
 
   const resetForm = () => {
     setAction('INBOUND')
@@ -180,9 +169,17 @@ export function InventoryModule({
 
   useEffect(() => {
     if (!canWrite) return
+    let shouldOpen = false
     try {
-      if (sessionStorage.getItem(OPEN_MOVEMENT_FLAG) === '1') {
-        sessionStorage.removeItem(OPEN_MOVEMENT_FLAG)
+      if (sessionStorage.getItem(OPEN_INVENTORY_MOVEMENT_FLAG) === '1') {
+        sessionStorage.removeItem(OPEN_INVENTORY_MOVEMENT_FLAG)
+        shouldOpen = true
+      }
+    } catch {
+      // ignore storage errors
+    }
+    if (!shouldOpen) return
+    const timeoutId = window.setTimeout(() => {
         setAction('INBOUND')
         setMovementKind(kind)
         setProductId('')
@@ -194,22 +191,20 @@ export function InventoryModule({
         setNote('')
         setFormError('')
         setFormOpen(true)
-      }
-    } catch {
-      // ignore storage errors
-    }
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
   }, [canWrite, kind])
 
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault()
     if (!canWrite || saving) return
     if (!productId || !warehouseId) {
-      setFormError('Ürün ve depo seçin.')
+      setFormError(t('inventory.selectProductWarehouse'))
       return
     }
     const qty = Number(quantity)
     if (!Number.isFinite(qty) || qty < 0.001) {
-      setFormError('Geçerli bir miktar girin.')
+      setFormError(t('inventory.invalidQuantity'))
       return
     }
     setSaving(true)
@@ -230,10 +225,10 @@ export function InventoryModule({
       resetForm()
       await loadBalances()
       setSuccessNotice(
-        action === 'INBOUND' ? 'Stok girişi kaydedildi.' : 'Stok çıkışı kaydedildi.',
+        action === 'INBOUND' ? t('inventory.inboundSaved') : t('inventory.outboundSaved'),
       )
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Stok hareketi kaydedilemedi.')
+      setFormError(err instanceof ApiError ? err.message : t('inventory.movementSaveError'))
     } finally {
       setSaving(false)
     }
@@ -255,9 +250,9 @@ export function InventoryModule({
       setWarehouseName('')
       setWarehouseAddress('')
       await loadSelectOptions()
-      setSuccessNotice('Depo kaydedildi.')
+      setSuccessNotice(t('inventory.warehouseSaved'))
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Depo kaydedilemedi.')
+      setFormError(err instanceof ApiError ? err.message : t('inventory.warehouseSaveError'))
     } finally {
       setSaving(false)
     }
@@ -271,14 +266,8 @@ export function InventoryModule({
     [products, movementKind],
   )
 
-  useEffect(() => {
-    if (productId && !selectableProducts.some((p) => String(p.id) === productId)) {
-      setProductId('')
-    }
-  }, [movementKind, selectableProducts, productId])
-
   const filtered = useMemo(() => {
-    const query = search.toLocaleLowerCase('tr-TR')
+    const query = search.toLocaleLowerCase(locale)
     return balances.filter((item) =>
       [
         item.name,
@@ -287,9 +276,9 @@ export function InventoryModule({
         item.yarnType ?? '',
         item.category ?? '',
         ...item.warehouses.map((warehouse) => warehouse.name),
-      ].some((value) => value.toLocaleLowerCase('tr-TR').includes(query)),
+      ].some((value) => value.toLocaleLowerCase(locale).includes(query)),
     )
-  }, [balances, search])
+  }, [balances, locale, search])
 
   const totalMeters = balances
     .filter((item) => item.unit === 'METER')
@@ -313,18 +302,18 @@ export function InventoryModule({
       <ModuleSummary
         items={[
           ...(isYarnInventory
-            ? [{ label: 'Toplam İplik', value: loading ? '…' : formatQty(totalKilograms), unit: 'kg' }]
+            ? [{ label: t('inventory.totalYarn'), value: loading ? '…' : formatQty(totalKilograms), unit: 'kg' }]
             : [
-                { label: 'Toplam Metre', value: loading ? '…' : formatQty(totalMeters), unit: 'm' },
-                { label: 'Toplam Adet', value: loading ? '…' : formatQty(totalPieces) },
+                { label: t('inventory.totalMeters'), value: loading ? '…' : formatQty(totalMeters), unit: 'm' },
+                { label: t('inventory.totalPieces'), value: loading ? '…' : formatQty(totalPieces) },
               ]),
-          { label: 'Kritik Seviye', value: loading ? '…' : String(criticalCount) },
+          { label: t('inventory.criticalLevel'), value: loading ? '…' : formatNumber(criticalCount) },
           {
-            label: 'Toplam Stok Değeri',
+            label: t('inventory.totalValue'),
             value: loading
               ? '…'
               : missingCostCount === balances.length && balances.length > 0
-                ? 'Hesaplanamıyor'
+                ? t('inventory.notComputable')
                 : formatMoney(totalStockValue),
             unit:
               missingCostCount === balances.length && balances.length > 0 ? undefined : 'DZD',
@@ -334,8 +323,7 @@ export function InventoryModule({
 
       {missingCostCount > 0 && balances.length > 0 && (
         <p className="demo-notice">
-          Stok değeri hesaplanamıyor: maliyet fiyatı eksik ({missingCostCount} kalem). Satış
-          fiyatı kullanılmaz.
+          {t('inventory.missingCost', { count: formatNumber(missingCostCount) })}
         </p>
       )}
 
@@ -349,37 +337,37 @@ export function InventoryModule({
                 className="btn btn--primary"
                 onClick={() => openMovement('INBOUND')}
               >
-                Stok Girişi
+                {t('inventory.action.INBOUND')}
               </button>
               <button
                 type="button"
                 className="btn btn--ghost"
                 onClick={() => openMovement('OUTBOUND')}
               >
-                Stok Çıkışı
+                {t('inventory.action.OUTBOUND')}
               </button>
             </div>
           ) : (
             <span className="panel__meta">
-              {loading ? 'Yükleniyor…' : `${filtered.length} kalem`}
+              {loading ? t('common.loading') : t('inventory.itemCount', { count: formatNumber(filtered.length) })}
             </span>
           )}
         </div>
         <p className="inventory-lede">{inventoryLede}</p>
         {!isYarnInventory && (
           <ul className="inventory-examples">
-            <li>Yaka</li>
-            <li>Bant</li>
-            <li>Manşet</li>
-            <li>Diğer mamul ürünler</li>
+            <li>{t('inventory.example.collar')}</li>
+            <li>{t('inventory.example.band')}</li>
+            <li>{t('inventory.example.cuff')}</li>
+            <li>{t('inventory.example.other')}</li>
           </ul>
         )}
         <ModuleToolbar
           reportType="stock"
-          reportLabel="Stok Raporu"
+          reportLabel={t('inventory.report')}
           search={search}
           onSearchChange={setSearch}
-          searchPlaceholder={isYarnInventory ? 'İplik, tür, renk veya depo ara...' : 'Ürün, SKU, renk veya depo ara...'}
+          searchPlaceholder={t(`inventory.search.${kind}`)}
         />
         {error && (
           <p className="demo-notice" role="alert">
@@ -390,8 +378,8 @@ export function InventoryModule({
           <div className="empty-state empty-state--cta inventory-empty">
             <p>
               {isYarnInventory
-                ? 'Henüz iplik/hammadde stoğu yok.'
-                : 'Henüz mamul ürün stoğu yok.'}
+                ? t('inventory.empty.yarn')
+                : t('inventory.empty.finished')}
             </p>
             {canWrite && (
               <button
@@ -399,7 +387,7 @@ export function InventoryModule({
                 className="btn btn--primary"
                 onClick={() => openMovement('INBOUND')}
               >
-                {isYarnInventory ? 'İplik Ekle' : 'Stok Girişi Yap'}
+                {isYarnInventory ? t('inventory.addYarn') : t('inventory.addStock')}
               </button>
             )}
           </div>
@@ -410,26 +398,26 @@ export function InventoryModule({
               <tr>
                 {isYarnInventory ? (
                   <>
-                    <th>Hammadde / iplik adı</th>
-                    <th>Tür</th>
-                    <th>Renk</th>
-                    <th>Mevcut kg</th>
-                    <th>Birim maliyet / kg</th>
-                    <th>Toplam stok değeri</th>
-                    <th>Kritik Seviye</th>
+                    <th>{t('inventory.materialName')}</th>
+                    <th>{t('inventory.type')}</th>
+                    <th>{t('inventory.color')}</th>
+                    <th>{t('inventory.currentKg')}</th>
+                    <th>{t('inventory.unitCostKg')}</th>
+                    <th>{t('inventory.stockValue')}</th>
+                    <th>{t('inventory.criticalLevel')}</th>
                   </>
                 ) : (
                   <>
-                    <th>Ürün</th>
-                    {textile && <th>Renk</th>}
-                    {textile && <th>Ölçü / En</th>}
-                    <th>Birim</th>
-                    <th>Mevcut Miktar</th>
-                    <th>Rezerve</th>
-                    <th>Kullanılabilir</th>
-                    <th>Birim Maliyet</th>
-                    <th>Toplam Değer</th>
-                    <th>Kritik Seviye</th>
+                    <th>{t('inventory.product')}</th>
+                    {textile && <th>{t('inventory.color')}</th>}
+                    {textile && <th>{t('inventory.measure')}</th>}
+                    <th>{t('inventory.unit')}</th>
+                    <th>{t('inventory.currentQuantity')}</th>
+                    <th>{t('inventory.reserved')}</th>
+                    <th>{t('inventory.available')}</th>
+                    <th>{t('inventory.unitCost')}</th>
+                    <th>{t('inventory.totalValue')}</th>
+                    <th>{t('inventory.criticalLevel')}</th>
                   </>
                 )}
               </tr>
@@ -465,10 +453,10 @@ export function InventoryModule({
                       {textile && <td>{item.color ?? '—'}</td>}
                       {textile && (
                         <td>
-                          {item.widthCm != null ? `${item.widthCm.toLocaleString('tr-TR')} cm` : '—'}
+                          {item.widthCm != null ? `${formatNumber(item.widthCm)} cm` : '—'}
                         </td>
                       )}
-                      <td>{unitLabel(item.unit)}</td>
+                      <td>{t(`requests.unit.${item.unit}`)}</td>
                       <td>{formatQty(item.quantity)}</td>
                       <td>{formatQty(item.reservedQuantity)}</td>
                       <td>{formatQty(item.availableQuantity)}</td>
@@ -488,7 +476,7 @@ export function InventoryModule({
               {!loading && !error && filtered.length === 0 && (
                 <tr>
                   <td colSpan={isYarnInventory ? 7 : textile ? 10 : 8} className="empty-cell">
-                    Arama sonucu yok.
+                    {t('inventory.noSearchResult')}
                   </td>
                 </tr>
               )}
@@ -500,7 +488,7 @@ export function InventoryModule({
 
       <section className="panel panel--full">
         <div className="panel__header">
-          <h2>Depolar</h2>
+          <h2>{t('inventory.warehouses')}</h2>
           {canManageWarehouses && (
             <div className="panel__header-actions">
               <button
@@ -514,7 +502,7 @@ export function InventoryModule({
                   setWarehouseFormOpen(true)
                 }}
               >
-                + Yeni Depo
+                + {t('inventory.newWarehouse')}
               </button>
             </div>
           )}
@@ -523,8 +511,8 @@ export function InventoryModule({
           <table className="data-table">
             <thead>
               <tr>
-                <th>Kod</th>
-                <th>Depo</th>
+                <th>{t('inventory.code')}</th>
+                <th>{t('inventory.warehouse')}</th>
               </tr>
             </thead>
             <tbody>
@@ -537,7 +525,7 @@ export function InventoryModule({
               {warehouses.length === 0 && (
                 <tr>
                   <td colSpan={2} className="empty-cell">
-                    Henüz depo kaydı yok.
+                    {t('inventory.noWarehouses')}
                   </td>
                 </tr>
               )}
@@ -548,7 +536,7 @@ export function InventoryModule({
 
       <Modal
         open={formOpen}
-        title={action === 'INBOUND' ? 'Stok Girişi' : 'Stok Çıkışı'}
+        title={t(`inventory.action.${action}`)}
         onClose={() => {
           setFormOpen(false)
           setFormError('')
@@ -556,36 +544,39 @@ export function InventoryModule({
       >
         <form className="demo-form" onSubmit={(e) => void handleCreate(e)}>
           <label>
-            Hareket tipi
+            {t('inventory.movementType')}
             <select
               dir="ltr"
               value={action}
               onChange={(e) => setAction(e.target.value as StockAction)}
             >
-              <option value="INBOUND">Stok Girişi</option>
-              <option value="OUTBOUND">Stok Çıkışı</option>
+              <option value="INBOUND">{t('inventory.action.INBOUND')}</option>
+              <option value="OUTBOUND">{t('inventory.action.OUTBOUND')}</option>
             </select>
           </label>
           <label>
-            Stok türü
+            {t('inventory.stockKind')}
             <select
               dir="ltr"
               value={movementKind}
-              onChange={(e) => setMovementKind(e.target.value as MovementKind)}
+              onChange={(e) => {
+                setMovementKind(e.target.value as MovementKind)
+                setProductId('')
+              }}
             >
-              <option value="finished">Mamul Ürün</option>
-              <option value="yarn">İplik / Hammadde</option>
+              <option value="finished">{t('inventory.kind.finished')}</option>
+              <option value="yarn">{t('inventory.kind.yarn')}</option>
             </select>
           </label>
           <label>
-            {movementKind === 'yarn' ? 'İplik / hammadde' : 'Mamul ürün'}
+            {movementKind === 'yarn' ? t('inventory.yarnMaterial') : t('inventory.finishedProduct')}
             <select
               required
               dir="ltr"
               value={productId}
               onChange={(e) => setProductId(e.target.value)}
             >
-              <option value="">Seçin</option>
+              <option value="">{t('inventory.select')}</option>
               {selectableProducts.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.code} — {p.name}
@@ -594,14 +585,14 @@ export function InventoryModule({
             </select>
           </label>
           <label>
-            Depo
+            {t('inventory.warehouse')}
             <select
               required
               dir="ltr"
               value={warehouseId}
               onChange={(e) => setWarehouseId(e.target.value)}
             >
-              <option value="">Seçin</option>
+              <option value="">{t('inventory.select')}</option>
               {warehouses.map((w) => (
                 <option key={w.id} value={w.id}>
                   {w.code} — {w.name}
@@ -610,7 +601,7 @@ export function InventoryModule({
             </select>
           </label>
           <label>
-            {movementKind === 'yarn' ? 'Miktar (kg)' : 'Miktar (adet / metre)'}
+            {movementKind === 'yarn' ? t('inventory.quantityKg') : t('inventory.quantityFinished')}
             <input
               type="number"
               min="0.001"
@@ -622,7 +613,7 @@ export function InventoryModule({
             />
           </label>
           <label>
-            Paket sayısı (opsiyonel)
+            {t('inventory.packageCount')}
             <input
               type="number"
               min="0"
@@ -633,7 +624,7 @@ export function InventoryModule({
             />
           </label>
           <label>
-            Birim maliyet (opsiyonel)
+            {t('inventory.unitCostOptional')}
             <input
               type="number"
               min="0"
@@ -644,7 +635,7 @@ export function InventoryModule({
             />
           </label>
           <label>
-            Referans (opsiyonel)
+            {t('inventory.reference')}
             <input
               dir="ltr"
               value={reference}
@@ -652,7 +643,7 @@ export function InventoryModule({
             />
           </label>
           <label>
-            Not (opsiyonel)
+            {t('inventory.note')}
             <textarea
               rows={2}
               dir="ltr"
@@ -664,9 +655,9 @@ export function InventoryModule({
             <p className="demo-notice" role="status">
               {selectableProducts.length === 0
                 ? movementKind === 'yarn'
-                  ? 'Önce iplik / hammadde ürün kaydı oluşturun.'
-                  : 'Önce mamul ürün kaydı oluşturun.'
-                : 'Önce depo kaydı oluşturun.'}
+                  ? t('inventory.createYarnFirst')
+                  : t('inventory.createFinishedFirst')
+                : t('inventory.createWarehouseFirst')}
             </p>
           )}
           {formError && (
@@ -683,14 +674,14 @@ export function InventoryModule({
                 setFormError('')
               }}
             >
-              Vazgeç
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               className="btn btn--primary"
               disabled={saving || selectableProducts.length === 0 || warehouses.length === 0}
             >
-              {saving ? 'Kaydediliyor…' : 'Kaydet'}
+              {saving ? t('inventory.saving') : t('common.save')}
             </button>
           </div>
         </form>
@@ -698,7 +689,7 @@ export function InventoryModule({
 
       <Modal
         open={warehouseFormOpen}
-        title="Yeni Depo"
+        title={t('inventory.newWarehouse')}
         onClose={() => {
           setWarehouseFormOpen(false)
           setFormError('')
@@ -706,7 +697,7 @@ export function InventoryModule({
       >
         <form className="demo-form" onSubmit={(event) => void handleWarehouseCreate(event)}>
           <label>
-            Depo kodu
+            {t('inventory.warehouseCode')}
             <input
               required
               value={warehouseCode}
@@ -714,7 +705,7 @@ export function InventoryModule({
             />
           </label>
           <label>
-            Depo adı
+            {t('inventory.warehouseName')}
             <input
               required
               minLength={2}
@@ -723,7 +714,7 @@ export function InventoryModule({
             />
           </label>
           <label>
-            Adres
+            {t('inventory.address')}
             <textarea
               rows={2}
               value={warehouseAddress}
@@ -741,23 +732,14 @@ export function InventoryModule({
               className="btn btn--ghost"
               onClick={() => setWarehouseFormOpen(false)}
             >
-              Vazgeç
+              {t('common.cancel')}
             </button>
             <button type="submit" className="btn btn--primary" disabled={saving}>
-              {saving ? 'Kaydediliyor…' : 'Kaydet'}
+              {saving ? t('inventory.saving') : t('common.save')}
             </button>
           </div>
         </form>
       </Modal>
     </>
   )
-}
-
-/** Günlük İşler vb. → stok hareketi modalını açar. */
-export function markOpenInventoryMovement(): void {
-  try {
-    sessionStorage.setItem(OPEN_MOVEMENT_FLAG, '1')
-  } catch {
-    // ignore
-  }
 }
