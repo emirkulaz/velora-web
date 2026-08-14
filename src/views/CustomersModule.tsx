@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { Modal } from '../components/Modal'
 import { ModuleSummary } from '../components/ModuleSummary'
 import { ModuleToolbar } from '../components/ModuleToolbar'
 import { SuccessToast } from '../components/Toast'
 import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from '../data/api'
+import { useI18n } from '../i18n/I18nProvider'
 
 interface Customer {
   id: number
@@ -64,6 +65,7 @@ export function CustomersModule({
   canWrite?: boolean
   canDelete?: boolean
 }) {
+  const { locale, t, formatNumber } = useI18n()
   const [search, setSearch] = useState('')
   const [customers, setCustomers] = useState<Customer[]>([])
   const [error, setError] = useState('')
@@ -76,36 +78,37 @@ export function CustomersModule({
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null)
   const [success, setSuccess] = useState('')
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       const rows = await apiGet<Customer[]>('/customers')
       setCustomers(rows)
       setError('')
     } catch {
-      setError('Müşteri verileri alınamadı.')
+      setError(t('customers.loadError'))
     } finally {
       setLoading(false)
     }
-  }
+  }, [t])
 
   useEffect(() => {
-    void load()
-  }, [])
+    const timeoutId = window.setTimeout(() => void load(), 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [load])
 
   const filtered = useMemo(
     () =>
       customers.filter(
         (c) =>
-          c.name.toLocaleLowerCase('tr-TR').includes(search.toLocaleLowerCase('tr-TR')) ||
-          (c.city?.toLocaleLowerCase('tr-TR').includes(search.toLocaleLowerCase('tr-TR')) ??
+          c.name.toLocaleLowerCase(locale).includes(search.toLocaleLowerCase(locale)) ||
+          (c.city?.toLocaleLowerCase(locale).includes(search.toLocaleLowerCase(locale)) ??
             false) ||
           (c.contactName
-            ?.toLocaleLowerCase('tr-TR')
-            .includes(search.toLocaleLowerCase('tr-TR')) ??
+            ?.toLocaleLowerCase(locale)
+            .includes(search.toLocaleLowerCase(locale)) ??
             false),
       ),
-    [customers, search],
+    [customers, locale, search],
   )
 
   const openCreate = () => {
@@ -142,10 +145,10 @@ export function CustomersModule({
       const payload = toPayload(form, Boolean(editing))
       if (editing) {
         await apiPatch(`/customers/${editing.id}`, payload)
-        setSuccess('Müşteri güncellendi.')
+        setSuccess(t('customers.updated'))
       } else {
         await apiPost('/customers', payload)
-        setSuccess('Yeni müşteri kaydedildi.')
+        setSuccess(t('customers.created'))
       }
       setFormOpen(false)
       setEditing(null)
@@ -153,7 +156,7 @@ export function CustomersModule({
       await load()
     } catch (err) {
       setFormError(
-        err instanceof ApiError ? err.message : 'Müşteri kaydedilemedi.',
+        err instanceof ApiError ? err.message : t('customers.saveError'),
       )
     } finally {
       setSaving(false)
@@ -168,9 +171,9 @@ export function CustomersModule({
       await apiDelete(`/customers/${deleteTarget.id}`)
       setDeleteTarget(null)
       await load()
-      setSuccess('Müşteri silindi.')
+      setSuccess(t('customers.deleted'))
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Müşteri silinemedi.')
+      setError(err instanceof ApiError ? err.message : t('customers.deleteError'))
     } finally {
       setSaving(false)
     }
@@ -181,7 +184,7 @@ export function CustomersModule({
       <SuccessToast message={success} onDismiss={() => setSuccess('')} />
       <section className="panel panel--full">
         <div className="panel__header">
-          <h2>Müşteri Listesi</h2>
+          <h2>{t('customers.list')}</h2>
           {canWrite && (
             <div className="panel__header-actions">
               <button
@@ -189,17 +192,17 @@ export function CustomersModule({
                 className="btn btn--primary"
                 onClick={openCreate}
               >
-                + Yeni Müşteri
+                + {t('customers.new')}
               </button>
             </div>
           )}
         </div>
         <ModuleToolbar
           reportType="customers"
-          reportLabel="Müşteri Raporu"
+          reportLabel={t('customers.report')}
           search={search}
           onSearchChange={setSearch}
-          searchPlaceholder="Firma, şehir veya yetkili ara..."
+          searchPlaceholder={t('customers.search')}
         />
         {error && (
           <p className="demo-notice" role="alert">
@@ -208,13 +211,13 @@ export function CustomersModule({
         )}
         {!loading && !error && customers.length === 0 && canWrite && (
           <div className="empty-state empty-state--cta">
-            <p>Henüz müşteri kaydı yok.</p>
+            <p>{t('customers.empty')}</p>
             <button
               type="button"
               className="btn btn--primary"
               onClick={openCreate}
             >
-              + Yeni Müşteri
+              + {t('customers.new')}
             </button>
           </div>
         )}
@@ -222,13 +225,13 @@ export function CustomersModule({
           <table className="data-table">
             <thead>
               <tr>
-                <th>Firma</th>
-                <th>Yetkili</th>
-                <th>Şehir</th>
-                <th>Telefon</th>
-                <th>E-posta</th>
-                <th>Durum</th>
-                {(canWrite || canDelete) && <th>İşlem</th>}
+                <th>{t('customers.company')}</th>
+                <th>{t('customers.contact')}</th>
+                <th>{t('customers.city')}</th>
+                <th>{t('customers.phone')}</th>
+                <th>{t('customers.email')}</th>
+                <th>{t('customers.status')}</th>
+                {(canWrite || canDelete) && <th>{t('customers.actions')}</th>}
               </tr>
             </thead>
             <tbody>
@@ -239,7 +242,7 @@ export function CustomersModule({
                   <td>{c.city ?? '—'}</td>
                   <td>{c.phone ?? '—'}</td>
                   <td>{c.email ?? '—'}</td>
-                  <td>{c.isActive ? 'Aktif' : 'Pasif'}</td>
+                  <td>{c.isActive ? t('customers.active') : t('customers.inactive')}</td>
                   {(canWrite || canDelete) && (
                     <td>
                       <div className="form-actions" style={{ justifyContent: 'flex-start' }}>
@@ -249,7 +252,7 @@ export function CustomersModule({
                             className="btn btn--ghost"
                             onClick={() => openEdit(c)}
                           >
-                            Düzenle
+                            {t('customers.edit')}
                           </button>
                         )}
                         {canDelete && (
@@ -258,7 +261,7 @@ export function CustomersModule({
                             className="btn btn--ghost"
                             onClick={() => setDeleteTarget(c)}
                           >
-                            Sil
+                            {t('customers.delete')}
                           </button>
                         )}
                       </div>
@@ -269,7 +272,7 @@ export function CustomersModule({
               {!error && !loading && filtered.length === 0 && customers.length > 0 && (
                 <tr>
                   <td colSpan={canWrite || canDelete ? 7 : 6}>
-                    Arama kriterine uyan müşteri bulunamadı.
+                    {t('customers.noSearchResult')}
                   </td>
                 </tr>
               )}
@@ -280,24 +283,24 @@ export function CustomersModule({
 
       <ModuleSummary
         items={[
-          { label: 'Toplam Müşteri', value: loading ? '…' : String(customers.length) },
+          { label: t('customers.total'), value: loading ? '…' : formatNumber(customers.length) },
           {
-            label: 'Aktif',
+            label: t('customers.active'),
             value: loading
               ? '…'
-              : String(customers.filter((customer) => customer.isActive).length),
+              : formatNumber(customers.filter((customer) => customer.isActive).length),
           },
           {
-            label: 'Pasif',
+            label: t('customers.inactive'),
             value: loading
               ? '…'
-              : String(customers.filter((customer) => !customer.isActive).length),
+              : formatNumber(customers.filter((customer) => !customer.isActive).length),
           },
           {
-            label: 'Şehir',
+            label: t('customers.city'),
             value: loading
               ? '…'
-              : String(
+              : formatNumber(
                   new Set(customers.map((customer) => customer.city).filter(Boolean)).size,
                 ),
           },
@@ -306,7 +309,7 @@ export function CustomersModule({
 
       <Modal
         open={formOpen}
-        title={editing ? 'Müşteri Düzenle' : 'Yeni Müşteri'}
+        title={editing ? t('customers.editTitle') : t('customers.new')}
         onClose={() => setFormOpen(false)}
       >
         <form className="demo-form" onSubmit={(e) => void handleSubmit(e)}>
@@ -316,7 +319,7 @@ export function CustomersModule({
             </p>
           )}
           <label>
-            Firma adı
+            {t('customers.companyName')}
             <input
               required
               minLength={2}
@@ -325,28 +328,28 @@ export function CustomersModule({
             />
           </label>
           <label>
-            Yetkili
+            {t('customers.contact')}
             <input
               value={form.contactName}
               onChange={(e) => setForm((f) => ({ ...f, contactName: e.target.value }))}
             />
           </label>
           <label>
-            Vergi no
+            {t('customers.taxNumber')}
             <input
               value={form.taxNumber}
               onChange={(e) => setForm((f) => ({ ...f, taxNumber: e.target.value }))}
             />
           </label>
           <label>
-            Telefon
+            {t('customers.phone')}
             <input
               value={form.phone}
               onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
             />
           </label>
           <label>
-            E-posta
+            {t('customers.email')}
             <input
               type="email"
               value={form.email}
@@ -354,21 +357,21 @@ export function CustomersModule({
             />
           </label>
           <label>
-            Ülke
+            {t('customers.country')}
             <input
               value={form.country}
               onChange={(e) => setForm((f) => ({ ...f, country: e.target.value }))}
             />
           </label>
           <label>
-            Şehir
+            {t('customers.city')}
             <input
               value={form.city}
               onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
             />
           </label>
           <label>
-            Adres
+            {t('customers.address')}
             <textarea
               rows={2}
               value={form.address}
@@ -377,10 +380,10 @@ export function CustomersModule({
           </label>
           <div className="form-actions">
             <button type="button" className="btn btn--ghost" onClick={() => setFormOpen(false)}>
-              Vazgeç
+              {t('common.cancel')}
             </button>
             <button type="submit" className="btn btn--primary" disabled={saving}>
-              {saving ? 'Kaydediliyor…' : 'Kaydet'}
+              {saving ? t('customers.saving') : t('common.save')}
             </button>
           </div>
         </form>
@@ -388,13 +391,13 @@ export function CustomersModule({
 
       <ConfirmDialog
         open={deleteTarget != null}
-        title="Müşteriyi sil"
+        title={t('customers.deleteTitle')}
         message={
           deleteTarget
-            ? `"${deleteTarget.name}" kalıcı olarak silinecek. Devam edilsin mi?`
+            ? t('customers.deleteConfirm', { name: deleteTarget.name })
             : ''
         }
-        confirmLabel="Sil"
+        confirmLabel={t('customers.delete')}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={() => void handleDelete()}
       />

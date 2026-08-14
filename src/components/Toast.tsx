@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useI18n } from '../i18n/I18nProvider'
 
 type ToastProps = {
   message: string
@@ -6,6 +7,7 @@ type ToastProps = {
 }
 
 export function SuccessToast({ message, onDismiss }: ToastProps) {
+  const { t } = useI18n()
   useEffect(() => {
     if (!message) return
 
@@ -22,7 +24,7 @@ export function SuccessToast({ message, onDismiss }: ToastProps) {
         type="button"
         className="toast__close"
         onClick={onDismiss}
-        aria-label="Bildirimi kapat"
+        aria-label={t('common.dismissNotification')}
       >
         ×
       </button>

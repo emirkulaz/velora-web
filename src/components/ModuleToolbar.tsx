@@ -4,6 +4,7 @@ interface FilterOption {
 }
 
 import { ReportButton, type ReportType } from './ReportButton'
+import { useI18n } from '../i18n/I18nProvider'
 
 interface ModuleToolbarProps {
   search: string
@@ -21,7 +22,7 @@ interface ModuleToolbarProps {
 export function ModuleToolbar({
   search,
   onSearchChange,
-  searchPlaceholder = 'Ara...',
+  searchPlaceholder,
   filter,
   filterOptions,
   onFilterChange,
@@ -30,6 +31,7 @@ export function ModuleToolbar({
   reportType,
   reportLabel,
 }: ModuleToolbarProps) {
+  const { t } = useI18n()
   return (
     <div className="module-toolbar">
       <input
@@ -37,15 +39,15 @@ export function ModuleToolbar({
         className="module-toolbar__search"
         value={search}
         onChange={(event) => onSearchChange(event.target.value)}
-        placeholder={searchPlaceholder}
-        aria-label="Ara"
+        placeholder={searchPlaceholder ?? t('common.searchPlaceholder')}
+        aria-label={t('common.search')}
       />
       {filterOptions && onFilterChange && (
         <select
           className="module-toolbar__filter"
           value={filter ?? 'all'}
           onChange={(event) => onFilterChange(event.target.value)}
-          aria-label="Filtrele"
+          aria-label={t('common.filter')}
         >
           {filterOptions.map((option) => (
             <option key={option.value} value={option.value}>

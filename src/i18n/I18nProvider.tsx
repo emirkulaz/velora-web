@@ -8,6 +8,7 @@ import {
 } from 'react'
 import { applyDocumentDirection } from './documentDirection'
 import { apiPatch } from '../data/api'
+import { customerTranslations } from './catalogs/customers'
 
 export type UiLanguage = 'tr' | 'fr' | 'en'
 
@@ -27,6 +28,7 @@ const LANGUAGE_STORAGE_KEY = 'velora.uiLanguage'
 
 export const translations: Record<UiLanguage, Record<string, string>> = {
   tr: {
+    ...customerTranslations.tr,
     'language.tr': 'Türkçe',
     'language.fr': 'Français',
     'language.en': 'English',
@@ -136,6 +138,14 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
     'common.cancel': 'Vazgeç',
     'common.save': 'Kaydet',
     'common.close': 'Kapat',
+    'common.search': 'Ara',
+    'common.searchPlaceholder': 'Ara…',
+    'common.filter': 'Filtrele',
+    'common.dismissNotification': 'Bildirimi kapat',
+    'reports.daily': 'Günlük Rapor',
+    'reports.date': 'Rapor tarihi',
+    'reports.preparing': 'Hazırlanıyor…',
+    'reports.pdfError': 'PDF oluşturulamadı.',
     'common.confirm': 'Onayla',
     'common.later': 'Daha sonra',
     'common.openMenu': 'Menüyü aç',
@@ -180,6 +190,7 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
     'role.PRODUCTION_MANAGER': 'Üretim Müdürü',
   },
   fr: {
+    ...customerTranslations.fr,
     'language.tr': 'Türkçe',
     'language.fr': 'Français',
     'language.en': 'English',
@@ -289,6 +300,14 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
     'common.cancel': 'Annuler',
     'common.save': 'Enregistrer',
     'common.close': 'Fermer',
+    'common.search': 'Rechercher',
+    'common.searchPlaceholder': 'Rechercher…',
+    'common.filter': 'Filtrer',
+    'common.dismissNotification': 'Fermer la notification',
+    'reports.daily': 'Rapport quotidien',
+    'reports.date': 'Date du rapport',
+    'reports.preparing': 'Préparation…',
+    'reports.pdfError': 'Impossible de générer le PDF.',
     'common.confirm': 'Confirmer',
     'common.later': 'Plus tard',
     'common.openMenu': 'Ouvrir le menu',
@@ -333,6 +352,7 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
     'role.PRODUCTION_MANAGER': 'Responsable production',
   },
   en: {
+    ...customerTranslations.en,
     'language.tr': 'Türkçe',
     'language.fr': 'Français',
     'language.en': 'English',
@@ -442,6 +462,14 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
     'common.cancel': 'Cancel',
     'common.save': 'Save',
     'common.close': 'Close',
+    'common.search': 'Search',
+    'common.searchPlaceholder': 'Search…',
+    'common.filter': 'Filter',
+    'common.dismissNotification': 'Dismiss notification',
+    'reports.daily': 'Daily report',
+    'reports.date': 'Report date',
+    'reports.preparing': 'Preparing…',
+    'reports.pdfError': 'The PDF could not be generated.',
     'common.confirm': 'Confirm',
     'common.later': 'Later',
     'common.openMenu': 'Open menu',

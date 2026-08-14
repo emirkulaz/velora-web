@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react'
+import { useI18n } from '../i18n/I18nProvider'
 
 interface ModalProps {
   open: boolean
@@ -9,6 +10,7 @@ interface ModalProps {
 }
 
 export function Modal({ open, title, onClose, children, wide }: ModalProps) {
+  const { t } = useI18n()
   useEffect(() => {
     if (!open) return
     const onKeyDown = (event: KeyboardEvent) => {
@@ -31,7 +33,7 @@ export function Modal({ open, title, onClose, children, wide }: ModalProps) {
       >
         <div className="modal__header">
           <h3 id="modal-title">{title}</h3>
-          <button type="button" className="modal__close" onClick={onClose} aria-label="Kapat">
+          <button type="button" className="modal__close" onClick={onClose} aria-label={t('common.close')}>
             ×
           </button>
         </div>
