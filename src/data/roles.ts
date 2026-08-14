@@ -11,7 +11,7 @@ export type AppUserRole =
 
 export const roleLabels: Record<AppUserRole, string> = {
   ADMIN: 'Yönetici',
-  MEMBER: 'Çalışan',
+  MEMBER: 'Operasyon kullanıcısı',
   VIEWER: 'Görüntüleyici',
   ACCOUNTING_OPERATOR: 'Muhasebe Operatörü',
   ACCOUNTING_OPERATIONS: 'Muhasebe & Operasyon',
@@ -35,7 +35,14 @@ const ALL_MENUS: MenuId[] = [
   'users',
 ]
 
-const ACCOUNTING_MENUS: MenuId[] = [
+const ACCOUNTING_OPERATOR_MENUS: MenuId[] = [
+  'overview',
+  'customers',
+  'finance',
+  'financeAi',
+]
+
+const ACCOUNTING_OPERATIONS_MENUS: MenuId[] = [
   'overview',
   'dailyWork',
   'customers',
@@ -43,6 +50,7 @@ const ACCOUNTING_MENUS: MenuId[] = [
   'orders',
   'inventory',
   'yarnInventory',
+  'production',
   'finance',
   'financeAi',
 ]
@@ -51,18 +59,17 @@ const ORDER_WRITE_ROLES: AppUserRole[] = [
   'ADMIN',
   'OWNER',
   'ACCOUNTING_OPERATIONS',
-  'ACCOUNTING_OPERATOR',
 ]
 
 const REQUEST_WRITE_ROLES: AppUserRole[] = [...ORDER_WRITE_ROLES]
 
 const ROLE_MENUS: Record<AppUserRole, MenuId[]> = {
   OWNER: ALL_MENUS,
-  ADMIN: ALL_MENUS,
+  ADMIN: [...ALL_MENUS, 'userManagement'],
   MEMBER: ALL_MENUS.filter((id) => id !== 'users' && id !== 'dailyWork'),
   VIEWER: ALL_MENUS.filter((id) => id !== 'users' && id !== 'dailyWork'),
-  ACCOUNTING_OPERATOR: ACCOUNTING_MENUS,
-  ACCOUNTING_OPERATIONS: ACCOUNTING_MENUS,
+  ACCOUNTING_OPERATOR: ACCOUNTING_OPERATOR_MENUS,
+  ACCOUNTING_OPERATIONS: ACCOUNTING_OPERATIONS_MENUS,
   PRODUCTION_MANAGER: [
     'overview',
     'products',
@@ -84,6 +91,10 @@ export function canAccessMenu(
   menuId: MenuId,
 ): boolean {
   return menusForRole(role).includes(menuId)
+}
+
+export function canManageUsers(role: AppUserRole | null | undefined): boolean {
+  return role === 'ADMIN'
 }
 
 export function canWriteOrders(role: AppUserRole | null | undefined): boolean {
@@ -109,7 +120,6 @@ const STOCK_WRITE_ROLES: AppUserRole[] = [
   'OWNER',
   'MEMBER',
   'PRODUCTION_MANAGER',
-  'ACCOUNTING_OPERATOR',
   'ACCOUNTING_OPERATIONS',
 ]
 

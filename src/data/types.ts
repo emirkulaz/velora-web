@@ -12,6 +12,7 @@ export type MenuId =
   | 'finance'
   | 'financeAi'
   | 'users'
+  | 'userManagement'
 
 export interface MenuItem {
   id: MenuId

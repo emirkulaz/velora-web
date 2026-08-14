@@ -10,6 +10,7 @@ import {
   canWriteProduction,
   canWriteProducts,
   canWriteStock,
+  canManageUsers,
   type AppUserRole,
 } from '../data/roles'
 import type { MenuId } from '../data/types'
@@ -25,6 +26,7 @@ import { OverviewModule } from './OverviewModule'
 import { ProductionModule } from './ProductionModule'
 import { ProductsModule } from './ProductsModule'
 import { UsersModule } from './UsersModule'
+import { UserManagementModule } from './UserManagementModule'
 
 export function renderModule(
   id: MenuId,
@@ -85,6 +87,10 @@ export function renderModule(
       return <FinanceAiModule />
     case 'users':
       return <UsersModule />
+    case 'userManagement':
+      return canManageUsers(role)
+        ? <UserManagementModule />
+        : <p className="demo-notice" role="alert">Bu sayfaya yalnızca yöneticiler erişebilir.</p>
     default:
       return <OverviewModule role={role} onNavigate={onNavigate} />
   }

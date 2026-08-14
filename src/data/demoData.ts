@@ -25,6 +25,7 @@ export const menuItems: MenuItem[] = [
   { id: 'finance', label: 'Finans', icon: 'chart' },
   { id: 'financeAi', label: 'Finans Asistanı', icon: 'spark' },
   { id: 'users', label: 'Çalışanlar', icon: 'users' },
+  { id: 'userManagement', label: 'Kullanıcı Yönetimi', icon: 'users' },
 ]
 
 export const menuTitles: Record<MenuId, string> = {
@@ -41,6 +42,7 @@ export const menuTitles: Record<MenuId, string> = {
   finance: 'Finans',
   financeAi: 'Finans Asistanı',
   users: 'Çalışanlar · vardiya, izin ve planlama',
+  userManagement: 'Kullanıcı Yönetimi · hesaplar ve yetkiler',
 }
 
 /** Placeholder stats — gerçek API bağlanana kadar sıfır. */
