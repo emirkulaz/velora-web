@@ -4,7 +4,7 @@ import type { FormEvent } from 'react'
 import { Modal } from '../components/Modal'
 import { ModuleSummary } from '../components/ModuleSummary'
 import { ModuleToolbar } from '../components/ModuleToolbar'
-import { apiGet, apiPatch, apiRequest } from '../data/api'
+import { apiGet, apiPatch, apiPost, apiRequest } from '../data/api'
 import { roleLabels, type AppUserRole } from '../data/roles'
 
 type CompanyUser = {
@@ -14,6 +14,7 @@ type CompanyUser = {
   role: AppUserRole
   isActive: boolean
   createdAt: string
+  mustChangePassword?: boolean
 }
 
 export function UserManagementModule() {
@@ -23,6 +24,8 @@ export function UserManagementModule() {
   const [formOpen, setFormOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [editingUser, setEditingUser] = useState<CompanyUser | null>(null)
+  const [passwordUser, setPasswordUser] = useState<CompanyUser | null>(null)
+  const [passwordNotice, setPasswordNotice] = useState('')
 
   const loadUsers = () => {
     setError('')
@@ -93,6 +96,31 @@ export function UserManagementModule() {
     setEditingUser(null)
   }
 
+  const submitTemporaryPassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!passwordUser) return
+    const form = new FormData(event.currentTarget)
+    const password = String(form.get('password') ?? '')
+    const confirmation = String(form.get('passwordConfirmation') ?? '')
+    setError('')
+    setPasswordNotice('')
+    if (password !== confirmation) {
+      setError('Geçici parola ve doğrulama alanı aynı olmalıdır.')
+      return
+    }
+    setIsSubmitting(true)
+    try {
+      await apiPost(`/users/${passwordUser.id}/temporary-password`, { password })
+      setPasswordNotice(`${passwordUser.name} için geçici parola kaydedildi. Kullanıcı ilk girişte parolasını değiştirecek.`)
+      setPasswordUser(null)
+      loadUsers()
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Geçici parola kaydedilemedi.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   return (
     <>
       <ModuleSummary items={[
@@ -111,10 +139,11 @@ export function UserManagementModule() {
           onAction={openCreateForm}
         />
         {error && <p className="demo-notice" role="alert">{error}</p>}
+        {passwordNotice && <p className="demo-notice" role="status">{passwordNotice}</p>}
         <div className="table-wrap"><table className="data-table">
           <thead><tr><th>Ad</th><th>E-posta</th><th>Yetki Rolü</th><th>Durum</th><th>Oluşturulma</th><th>İşlem</th></tr></thead>
           <tbody>
-            {filtered.map((user) => <tr key={user.id}><td><strong>{user.name}</strong></td><td>{user.email ?? '—'}</td><td>{roleLabels[user.role]}</td><td>{user.isActive ? 'Aktif' : 'Pasif'}</td><td className="date-cell">{new Date(user.createdAt).toLocaleDateString('tr-TR')}</td><td className="row-actions"><button type="button" onClick={() => openEditForm(user)}>Düzenle</button></td></tr>)}
+            {filtered.map((user) => <tr key={user.id}><td><strong>{user.name}</strong></td><td>{user.email ?? '—'}</td><td>{roleLabels[user.role]}</td><td>{user.isActive ? (user.mustChangePassword ? 'Aktif · parola değişecek' : 'Aktif') : 'Pasif'}</td><td className="date-cell">{new Date(user.createdAt).toLocaleDateString('tr-TR')}</td><td className="row-actions"><button type="button" onClick={() => openEditForm(user)}>Düzenle</button>{user.isActive && user.role !== 'ADMIN' && <button type="button" onClick={() => { setError(''); setPasswordNotice(''); setPasswordUser(user) }}>Geçici Parola</button>}</td></tr>)}
             {!error && filtered.length === 0 && <tr><td colSpan={6}>Henüz kullanıcı hesabı bulunmuyor.</td></tr>}
           </tbody>
         </table></div>
@@ -135,6 +164,14 @@ export function UserManagementModule() {
           </select></label>
           {editingUser && <label><input name="isActive" type="checkbox" defaultChecked={editingUser.isActive} /> Aktif kullanıcı</label>}
           <div className="form-actions"><button type="button" className="btn btn--ghost" onClick={closeForm}>Vazgeç</button><button type="submit" className="btn btn--primary" disabled={isSubmitting}>{isSubmitting ? 'Kaydediliyor…' : editingUser ? 'Değişiklikleri Kaydet' : 'Kullanıcı Oluştur'}</button></div>
+        </form>
+      </Modal>
+      <Modal open={Boolean(passwordUser)} title="Güvenli Geçici Parola" onClose={() => { if (!isSubmitting) setPasswordUser(null) }}>
+        <form key={passwordUser?.id ?? 'password'} className="demo-form" onSubmit={submitTemporaryPassword}>
+          <p><strong>{passwordUser?.name}</strong> için geçici parola belirleyin. Parola kaydedildikten sonra tekrar gösterilmez ve kullanıcı ilk girişte değiştirmek zorundadır.</p>
+          <label>Geçici parola<input name="password" type="password" minLength={12} maxLength={128} autoComplete="new-password" required /></label>
+          <label>Geçici parolayı doğrula<input name="passwordConfirmation" type="password" minLength={12} maxLength={128} autoComplete="new-password" required /></label>
+          <div className="form-actions"><button type="button" className="btn btn--ghost" onClick={() => setPasswordUser(null)} disabled={isSubmitting}>Vazgeç</button><button type="submit" className="btn btn--primary" disabled={isSubmitting}>{isSubmitting ? 'Güvenli biçimde kaydediliyor…' : 'Geçici Parolayı Kaydet'}</button></div>
         </form>
       </Modal>
     </>
