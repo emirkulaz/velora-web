@@ -1,3 +1,5 @@
+/* Translation catalogs and the useI18n hook intentionally share the provider module. */
+/* eslint-disable react-refresh/only-export-components */
 import {
   createContext,
   useCallback,

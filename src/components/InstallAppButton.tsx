@@ -23,13 +23,10 @@ export function InstallAppButton({ className = '' }: { className?: string }) {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(
     null,
   )
-  const [installed, setInstalled] = useState(false)
+  const [installed, setInstalled] = useState(isStandaloneDisplay)
 
   useEffect(() => {
-    if (isStandaloneDisplay()) {
-      setInstalled(true)
-      return
-    }
+    if (installed) return
 
     const onBeforeInstall = (event: Event) => {
       event.preventDefault()
@@ -47,7 +44,7 @@ export function InstallAppButton({ className = '' }: { className?: string }) {
       window.removeEventListener('beforeinstallprompt', onBeforeInstall)
       window.removeEventListener('appinstalled', onInstalled)
     }
-  }, [])
+  }, [installed])
 
   if (installed) return null
 

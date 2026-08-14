@@ -21,7 +21,7 @@ import { applyDocumentDirection, getUiTextDirection } from './i18n/documentDirec
 import { enforceLtrOnTree } from './i18n/enforceLtrFields'
 import { useI18n } from './i18n/I18nProvider'
 import { fileToAvatarDataUrl } from './utils/avatarImage'
-import { DailyWorkActions } from './views/DailyWorkModule'
+import { DailyWorkActions } from './views/DailyWorkActions'
 import { renderModule } from './views'
 import './App.css'
 
@@ -75,9 +75,9 @@ function App() {
   )
   const [authReady, setAuthReady] = useState(
     () =>
-      !Boolean(
+      !(
         localStorage.getItem('velora.accessToken') ??
-          sessionStorage.getItem('velora.accessToken'),
+          sessionStorage.getItem('velora.accessToken')
       ),
   )
   const [companyPresentation, setCompanyPresentation] = useState<CompanyPresentation | null>(
@@ -108,7 +108,6 @@ function App() {
   useEffect(() => {
     if (!isAuthenticated) return
     let cancelled = false
-    setAuthReady(false)
 
     apiGet<CurrentUser>('/users/me')
       .then((user) => {
