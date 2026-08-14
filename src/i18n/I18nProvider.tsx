@@ -21,6 +21,7 @@ import { cashFlowTranslations } from './catalogs/cashFlow'
 import { aiCommandTranslations } from './catalogs/aiCommand'
 import { loginExperienceTranslations } from './catalogs/loginExperience'
 import { userManagementTranslations } from './catalogs/userManagement'
+import { workforceTranslations } from './catalogs/workforce'
 
 export type UiLanguage = 'tr' | 'fr' | 'en'
 
@@ -53,6 +54,7 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
     ...aiCommandTranslations.tr,
     ...loginExperienceTranslations.tr,
     ...userManagementTranslations.tr,
+    ...workforceTranslations.tr,
     'language.tr': 'Türkçe',
     'language.fr': 'Français',
     'language.en': 'English',
@@ -227,6 +229,7 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
     ...aiCommandTranslations.fr,
     ...loginExperienceTranslations.fr,
     ...userManagementTranslations.fr,
+    ...workforceTranslations.fr,
     'language.tr': 'Türkçe',
     'language.fr': 'Français',
     'language.en': 'English',
@@ -401,6 +404,7 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
     ...aiCommandTranslations.en,
     ...loginExperienceTranslations.en,
     ...userManagementTranslations.en,
+    ...workforceTranslations.en,
     'language.tr': 'Türkçe',
     'language.fr': 'Français',
     'language.en': 'English',

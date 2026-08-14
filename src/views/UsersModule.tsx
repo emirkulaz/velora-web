@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 
 import { Modal } from '../components/Modal'
 import { ModuleSummary } from '../components/ModuleSummary'
 import { ModuleToolbar } from '../components/ModuleToolbar'
 import { apiDelete, apiGet, apiPatch, apiRequest } from '../data/api'
+import { useI18n } from '../i18n/I18nProvider'
 
 interface Employee {
   id: number
@@ -21,10 +22,11 @@ interface Employee {
 type WorkPlan = { id: number; employeeId: number; workDate: string; shiftId?: number; machineId?: number; taskType?: string; notes?: string; status: string; employee: { id: number; name: string }; shift?: { id: number; name: string; startTime: string; endTime: string } }
 type WorkShift = { id: number; name: string; startTime: string; endTime: string; sortOrder: number }
 const today = new Date().toISOString().slice(0, 10)
-const taskLabels: Record<string, string> = { MACHINE_OPERATOR: 'Makine Operatörü', PRODUCTION: 'Üretim', PACKAGING: 'Paketleme', WAREHOUSE: 'Depo', DELIVERY: 'Teslimat', ACCOUNTING: 'Muhasebe', GENERAL: 'Genel' }
-const statusLabels: Record<string, string> = { PLANNED: 'Planlandı', PRESENT: 'İşte', COMPLETED: 'Tamamlandı', ABSENT: 'Gelmedi', ON_LEAVE: 'İzinli', SICK_LEAVE: 'Raporlu', CANCELLED: 'İptal' }
+const TASKS = ['MACHINE_OPERATOR', 'PRODUCTION', 'PACKAGING', 'WAREHOUSE', 'DELIVERY', 'ACCOUNTING', 'GENERAL']
+const STATUSES = ['PLANNED', 'PRESENT', 'COMPLETED', 'ABSENT', 'ON_LEAVE', 'SICK_LEAVE', 'CANCELLED']
 
 export function UsersModule() {
+  const { locale, t, formatCurrency, formatDate } = useI18n()
   const [users, setUsers] = useState<Employee[]>([])
   const [search, setSearch] = useState('')
   const [error, setError] = useState('')
@@ -38,32 +40,39 @@ export function UsersModule() {
   const [planOpen, setPlanOpen] = useState(false)
   const [editingPlan, setEditingPlan] = useState<WorkPlan | null>(null)
 
-  const loadUsers = () => {
+  const loadUsers = useCallback(() => {
     apiGet<Employee[]>('/employees')
       .then(setUsers)
-      .catch(() => setError('Çalışanlar alınamadı.'))
-  }
+      .catch(() => setError(t('workforce.loadError')))
+  }, [t])
 
   useEffect(() => {
-    loadUsers()
-    apiGet<WorkShift[]>('/employee-work-plans/shifts').then(setShifts).catch(() => undefined)
-    apiGet<WorkPlan[]>(`/employee-work-plans/daily?date=${today}`).then(setTodayPlans).catch(() => undefined)
-  }, [])
+    const timer = window.setTimeout(() => {
+      loadUsers()
+      apiGet<WorkShift[]>('/employee-work-plans/shifts').then(setShifts).catch(() => undefined)
+      apiGet<WorkPlan[]>(`/employee-work-plans/daily?date=${today}`).then(setTodayPlans).catch(() => undefined)
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [loadUsers])
 
-  const loadPlans = () => {
+  const loadPlans = useCallback(() => {
     const mode = tab === 'weekly' ? 'weekly' : view
     const path = mode === 'daily' ? `/employee-work-plans/daily?date=${selectedDate}` : `/employee-work-plans/weekly?startDate=${selectedDate}`
-    apiGet<WorkPlan[]>(path).then(setPlans).catch(() => setError('Çalışma planı alınamadı.'))
-  }
-  useEffect(() => { if (tab !== 'team') loadPlans() }, [tab, view, selectedDate])
+    apiGet<WorkPlan[]>(path).then(setPlans).catch(() => setError(t('workforce.planLoadError')))
+  }, [selectedDate, t, tab, view])
+  useEffect(() => {
+    if (tab === 'team') return
+    const timer = window.setTimeout(loadPlans, 0)
+    return () => window.clearTimeout(timer)
+  }, [loadPlans, tab])
 
   const filtered = useMemo(() => {
-    const query = search.toLocaleLowerCase('tr-TR')
+    const query = search.toLocaleLowerCase(locale)
     return users.filter((user) =>
       [user.name, user.externalCode ?? '']
-        .some((value) => value.toLocaleLowerCase('tr-TR').includes(query)),
+        .some((value) => value.toLocaleLowerCase(locale).includes(query)),
     )
-  }, [search, users])
+  }, [locale, search, users])
   const knownSalaryTotal = useMemo(
     () => users.reduce((sum, user) => sum + (user.monthlySalaryGross ?? 0), 0),
     [users],
@@ -80,49 +89,49 @@ export function UsersModule() {
       if (editingPlan) await apiPatch(`/employee-work-plans/${editingPlan.id}`, payload)
       else await apiRequest('/employee-work-plans', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       setPlanOpen(false); setEditingPlan(null); loadPlans()
-    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Plan kaydedilemedi.') }
+    } catch (caught) { setError(caught instanceof Error ? caught.message : t('workforce.planSaveError')) }
     finally { setIsSubmitting(false) }
   }
 
   return (
     <>
       <div className="module-tabs">
-        <button className={tab === 'team' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('team')}>Personeller</button>
-        <button className={tab === 'daily' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('daily')}>Günlük Çalışma</button>
-        <button className={tab === 'plan' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('plan')}>Vardiya Planı</button>
-        <button className={tab === 'leave' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('leave')}>İzin / Devamsızlık</button>
-        <button className={tab === 'weekly' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('weekly')}>Haftalık Plan</button>
+        <button className={tab === 'team' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('team')}>{t('workforce.tab.team')}</button>
+        <button className={tab === 'daily' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('daily')}>{t('workforce.tab.daily')}</button>
+        <button className={tab === 'plan' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('plan')}>{t('workforce.tab.plan')}</button>
+        <button className={tab === 'leave' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('leave')}>{t('workforce.tab.leave')}</button>
+        <button className={tab === 'weekly' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('weekly')}>{t('workforce.tab.weekly')}</button>
       </div>
       {tab === 'team' ? <><ModuleSummary
         items={[
-          { label: 'Toplam Personel', value: String(users.length) },
-          { label: 'Aktif', value: String(users.filter((user) => user.isActive).length) },
-          { label: 'Aylık Maaş Toplamı', value: `${knownSalaryTotal.toLocaleString('tr-TR')} DZD` },
-          { label: 'İnceleme Gereken', value: String(users.filter((user) => user.salaryReviewRequired).length) },
+          { label: t('workforce.total'), value: String(users.length) },
+          { label: t('workforce.active'), value: String(users.filter((user) => user.isActive).length) },
+          { label: t('workforce.salaryTotal'), value: formatCurrency(knownSalaryTotal, 'DZD') },
+          { label: t('workforce.reviewCount'), value: String(users.filter((user) => user.salaryReviewRequired).length) },
         ]}
       />
 
       <section className="panel panel--full">
         <div className="panel__header">
-          <h2>TRIKOMEX Çalışanları</h2>
+          <h2>{t('workforce.title')}</h2>
         </div>
         <ModuleToolbar
           reportType="personnel"
-          reportLabel="Personel Raporu"
+          reportLabel={t('workforce.report')}
           search={search}
           onSearchChange={setSearch}
-          searchPlaceholder="Personel ara..."
+          searchPlaceholder={t('workforce.search')}
         />
         {error && <p className="demo-notice">{error}</p>}
         <div className="table-wrap">
           <table className="data-table">
             <thead>
               <tr>
-                <th>Ad</th>
-                <th>Personel Kodu</th>
-                <th>Aylık Maaş</th>
-                <th>Bugünkü Vardiya</th>
-                <th>Bugünkü Durum</th>
+                <th>{t('workforce.name')}</th>
+                <th>{t('workforce.code')}</th>
+                <th>{t('workforce.salary')}</th>
+                <th>{t('workforce.shiftToday')}</th>
+                <th>{t('workforce.statusToday')}</th>
               </tr>
             </thead>
             <tbody>
@@ -131,43 +140,43 @@ export function UsersModule() {
                 return (
                 <tr key={user.id}>
                   <td>{user.name}</td>
-                  <td>{user.externalCode ?? 'KOD YOK'}</td>
-                  <td>{user.monthlySalaryGross === null ? 'İnceleme gerekiyor' : `${user.monthlySalaryGross.toLocaleString('tr-TR')} ${user.salaryCurrency}`}</td>
-                  <td>{currentPlan?.shift ? `${currentPlan.shift.name} · ${currentPlan.shift.startTime}–${currentPlan.shift.endTime}` : 'Planlanmadı'}</td>
-                  <td>{currentPlan ? statusLabels[currentPlan.status] ?? currentPlan.status : '—'}</td>
+                  <td>{user.externalCode ?? t('workforce.noCode')}</td>
+                  <td>{user.monthlySalaryGross === null ? t('workforce.reviewRequired') : formatCurrency(user.monthlySalaryGross, user.salaryCurrency)}</td>
+                  <td>{currentPlan?.shift ? `${currentPlan.shift.name} · ${currentPlan.shift.startTime}–${currentPlan.shift.endTime}` : t('workforce.notPlanned')}</td>
+                  <td>{currentPlan ? t(`workforce.status.${currentPlan.status}`) : '—'}</td>
                 </tr>
               )})}
               {!error && filtered.length === 0 && (
-                <tr><td colSpan={5}>Henüz personel bulunmuyor.</td></tr>
+                <tr><td colSpan={5}>{t('workforce.empty')}</td></tr>
               )}
             </tbody>
           </table>
         </div>
       </section></> : <section className="panel panel--full workforce-panel">
-        <div className="panel__header workforce-header"><div><h2>Personel Çalışma Planı</h2><p>Günlük ve haftalık vardiya atamaları</p></div><button className="btn btn--primary" onClick={() => { setEditingPlan(null); setPlanOpen(true) }}>+ Plan Ekle</button></div>
+        <div className="panel__header workforce-header"><div><h2>{t('workforce.planTitle')}</h2><p>{t('workforce.planSubtitle')}</p></div><button className="btn btn--primary" onClick={() => { setEditingPlan(null); setPlanOpen(true) }}>+ {t('workforce.addPlan')}</button></div>
         <div className="workforce-toolbar">
-          <div className="view-switch"><button className={view === 'daily' ? 'active' : ''} onClick={() => setView('daily')}>Günlük</button><button className={view === 'weekly' ? 'active' : ''} onClick={() => setView('weekly')}>Haftalık</button></div>
+          <div className="view-switch"><button className={view === 'daily' ? 'active' : ''} onClick={() => setView('daily')}>{t('workforce.daily')}</button><button className={view === 'weekly' ? 'active' : ''} onClick={() => setView('weekly')}>{t('workforce.weekly')}</button></div>
           <input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
         </div>
         {error && <p className="demo-notice">{error}</p>}
-        {tab === 'daily' && <div className="shift-board">{shifts.map((shift) => <div className="shift-column" key={shift.id}><h3>{shift.name}<small>{shift.startTime}–{shift.endTime}</small></h3>{plans.filter((plan) => plan.shiftId === shift.id).map((plan) => <article className="shift-card" key={plan.id}><strong>{plan.employee.name}</strong><span>{taskLabels[plan.taskType ?? ''] ?? 'Görev belirtilmedi'}{plan.machineId ? ` · Makine ${plan.machineId}` : ''}</span><em>{statusLabels[plan.status] ?? plan.status}</em>{plan.notes && <small>{plan.notes}</small>}</article>)}{!plans.some((plan) => plan.shiftId === shift.id) && <p className="empty-shift">Atama yok</p>}</div>)}</div>}
-        {tab === 'weekly' && <div className="weekly-plan table-wrap"><table className="data-table"><thead><tr><th>Personel</th>{weeklyDays.map((day) => <th key={day}>{new Date(`${day}T12:00:00Z`).toLocaleDateString('tr-TR', { weekday: 'short', day: 'numeric' })}</th>)}</tr></thead><tbody>{users.filter((user) => user.isActive).map((user) => <tr key={user.id}><td><strong>{user.name}</strong></td>{weeklyDays.map((day) => { const plan = plans.find((item) => item.employeeId === user.id && item.workDate.slice(0, 10) === day); return <td key={day}>{plan ? <span className={`work-status work-status--${plan.status.toLowerCase()}`}>{plan.status === 'ON_LEAVE' ? 'İzin' : plan.status === 'ABSENT' ? 'Devamsız' : plan.shift?.name ?? statusLabels[plan.status]}</span> : 'Boş'}</td> })}</tr>)}</tbody></table></div>}
-        <div className="table-wrap"><table className="data-table"><thead><tr><th>Tarih</th><th>Personel</th><th>Vardiya</th><th>Görev</th><th>Makine</th><th>Durum</th><th>Not</th><th></th></tr></thead><tbody>
-          {plans.filter((plan) => tab !== 'leave' || ['ABSENT', 'ON_LEAVE', 'SICK_LEAVE'].includes(plan.status)).map((plan) => <tr key={plan.id}><td>{new Date(plan.workDate).toLocaleDateString('tr-TR')}</td><td><strong>{plan.employee.name}</strong></td><td>{plan.shift ? `${plan.shift.name} · ${plan.shift.startTime}–${plan.shift.endTime}` : 'Belirtilmedi'}</td><td>{taskLabels[plan.taskType ?? ''] ?? 'Belirtilmedi'}</td><td>{plan.machineId ? `Makine ${plan.machineId}` : '—'}</td><td><span className={`work-status work-status--${plan.status.toLowerCase()}`}>{statusLabels[plan.status] ?? plan.status}</span></td><td>{plan.notes || '—'}</td><td className="row-actions"><button onClick={() => { setEditingPlan(plan); setPlanOpen(true) }}>Düzenle</button><button onClick={async () => { await apiDelete(`/employee-work-plans/${plan.id}`); loadPlans() }}>Sil</button></td></tr>)}
-          {!plans.length && <tr><td colSpan={8}>Bu dönem için çalışma planı bulunmuyor.</td></tr>}
+        {tab === 'daily' && <div className="shift-board">{shifts.map((shift) => <div className="shift-column" key={shift.id}><h3>{shift.name}<small>{shift.startTime}–{shift.endTime}</small></h3>{plans.filter((plan) => plan.shiftId === shift.id).map((plan) => <article className="shift-card" key={plan.id}><strong>{plan.employee.name}</strong><span>{plan.taskType ? t(`workforce.task.${plan.taskType}`) : t('workforce.taskMissing')}{plan.machineId ? ` · ${t('workforce.machine', { number: plan.machineId })}` : ''}</span><em>{t(`workforce.status.${plan.status}`)}</em>{plan.notes && <small>{plan.notes}</small>}</article>)}{!plans.some((plan) => plan.shiftId === shift.id) && <p className="empty-shift">{t('workforce.noAssignment')}</p>}</div>)}</div>}
+        {tab === 'weekly' && <div className="weekly-plan table-wrap"><table className="data-table"><thead><tr><th>{t('workforce.employee')}</th>{weeklyDays.map((day) => <th key={day}>{formatDate(`${day}T12:00:00Z`, { weekday: 'short', day: 'numeric' })}</th>)}</tr></thead><tbody>{users.filter((user) => user.isActive).map((user) => <tr key={user.id}><td><strong>{user.name}</strong></td>{weeklyDays.map((day) => { const plan = plans.find((item) => item.employeeId === user.id && item.workDate.slice(0, 10) === day); return <td key={day}>{plan ? <span className={`work-status work-status--${plan.status.toLowerCase()}`}>{plan.shift?.name ?? t(`workforce.status.${plan.status}`)}</span> : t('workforce.emptySlot')}</td> })}</tr>)}</tbody></table></div>}
+        <div className="table-wrap"><table className="data-table"><thead><tr><th>{t('workforce.date')}</th><th>{t('workforce.employee')}</th><th>{t('workforce.shift')}</th><th>{t('workforce.task')}</th><th>{t('workforce.machineTitle')}</th><th>{t('workforce.status')}</th><th>{t('workforce.note')}</th><th></th></tr></thead><tbody>
+          {plans.filter((plan) => tab !== 'leave' || ['ABSENT', 'ON_LEAVE', 'SICK_LEAVE'].includes(plan.status)).map((plan) => <tr key={plan.id}><td>{formatDate(plan.workDate)}</td><td><strong>{plan.employee.name}</strong></td><td>{plan.shift ? `${plan.shift.name} · ${plan.shift.startTime}–${plan.shift.endTime}` : t('workforce.unspecified')}</td><td>{plan.taskType ? t(`workforce.task.${plan.taskType}`) : t('workforce.unspecified')}</td><td>{plan.machineId ? t('workforce.machine', { number: plan.machineId }) : '—'}</td><td><span className={`work-status work-status--${plan.status.toLowerCase()}`}>{t(`workforce.status.${plan.status}`)}</span></td><td>{plan.notes || '—'}</td><td className="row-actions"><button onClick={() => { setEditingPlan(plan); setPlanOpen(true) }}>{t('workforce.edit')}</button><button onClick={async () => { await apiDelete(`/employee-work-plans/${plan.id}`); loadPlans() }}>{t('workforce.delete')}</button></td></tr>)}
+          {!plans.length && <tr><td colSpan={8}>{t('workforce.noPlans')}</td></tr>}
         </tbody></table></div>
       </section>}
 
-      <Modal open={planOpen} title={editingPlan ? 'Çalışma Planını Düzenle' : 'Yeni Çalışma Planı'} onClose={() => { setPlanOpen(false); setEditingPlan(null) }}>
+      <Modal open={planOpen} title={editingPlan ? t('workforce.editPlan') : t('workforce.newPlan')} onClose={() => { setPlanOpen(false); setEditingPlan(null) }}>
         <form className="demo-form" onSubmit={submitPlan} key={editingPlan?.id ?? 'new'}>
-          <label>Personel<select name="employeeId" defaultValue={editingPlan?.employeeId} required>{users.filter((user) => user.isActive).map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
-          <label>Tarih<input name="workDate" type="date" defaultValue={editingPlan?.workDate.slice(0, 10) ?? selectedDate} required /></label>
-          <label>Vardiya<select name="shiftId" defaultValue={editingPlan?.shiftId ?? ''}><option value="">Belirtilmedi</option>{shifts.map((shift) => <option key={shift.id} value={shift.id}>{shift.name} · {shift.startTime}–{shift.endTime}</option>)}</select></label>
-          <label>Görev<select name="taskType" defaultValue={editingPlan?.taskType ?? 'GENERAL'}>{Object.entries(taskLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-          <label>Makine numarası<input name="machineId" type="number" min="1" defaultValue={editingPlan?.machineId} placeholder="Opsiyonel" /></label>
-          <label>Durum<select name="status" defaultValue={editingPlan?.status ?? 'PLANNED'}>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-          <label>Not<textarea name="notes" maxLength={500} defaultValue={editingPlan?.notes} /></label>
-          <div className="form-actions"><button type="button" className="btn btn--ghost" onClick={() => setPlanOpen(false)}>Vazgeç</button><button type="submit" className="btn btn--primary" disabled={isSubmitting}>{isSubmitting ? 'Kaydediliyor…' : 'Kaydet'}</button></div>
+          <label>{t('workforce.employee')}<select name="employeeId" defaultValue={editingPlan?.employeeId} required>{users.filter((user) => user.isActive).map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
+          <label>{t('workforce.date')}<input name="workDate" type="date" defaultValue={editingPlan?.workDate.slice(0, 10) ?? selectedDate} required /></label>
+          <label>{t('workforce.shift')}<select name="shiftId" defaultValue={editingPlan?.shiftId ?? ''}><option value="">{t('workforce.unspecified')}</option>{shifts.map((shift) => <option key={shift.id} value={shift.id}>{shift.name} · {shift.startTime}–{shift.endTime}</option>)}</select></label>
+          <label>{t('workforce.task')}<select name="taskType" defaultValue={editingPlan?.taskType ?? 'GENERAL'}>{TASKS.map((value) => <option key={value} value={value}>{t(`workforce.task.${value}`)}</option>)}</select></label>
+          <label>{t('workforce.machineNumber')}<input name="machineId" type="number" min="1" defaultValue={editingPlan?.machineId} placeholder={t('workforce.optional')} /></label>
+          <label>{t('workforce.status')}<select name="status" defaultValue={editingPlan?.status ?? 'PLANNED'}>{STATUSES.map((value) => <option key={value} value={value}>{t(`workforce.status.${value}`)}</option>)}</select></label>
+          <label>{t('workforce.note')}<textarea name="notes" maxLength={500} defaultValue={editingPlan?.notes} /></label>
+          <div className="form-actions"><button type="button" className="btn btn--ghost" onClick={() => setPlanOpen(false)}>{t('common.cancel')}</button><button type="submit" className="btn btn--primary" disabled={isSubmitting}>{isSubmitting ? t('workforce.saving') : t('common.save')}</button></div>
         </form>
       </Modal>
     </>
