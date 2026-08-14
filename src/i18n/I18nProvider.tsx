@@ -87,6 +87,9 @@ const translations: Record<UiLanguage, Record<string, string>> = {
     'login.submit': 'Giriş Yap',
     'login.submitting': 'Giriş yapılıyor…',
     'login.error': 'Giriş bilgileri hatalı. Lütfen tekrar deneyin.',
+    'login.mfaCode': 'Authenticator veya kurtarma kodu',
+    'login.mfaSubmit': 'Kodu doğrula',
+    'login.mfaError': 'Doğrulama kodu geçersiz veya süresi dolmuş.',
     'login.quick.eyebrow': 'GELİŞTİRME',
     'login.quick.title': 'Hızlı giriş',
     'login.quick.description':
@@ -171,6 +174,9 @@ const translations: Record<UiLanguage, Record<string, string>> = {
     'login.submit': 'Se connecter',
     'login.submitting': 'Connexion…',
     'login.error': 'Identifiants incorrects. Veuillez réessayer.',
+    'login.mfaCode': 'Code Authenticator ou de récupération',
+    'login.mfaSubmit': 'Vérifier le code',
+    'login.mfaError': 'Le code est incorrect ou a expiré.',
     'login.quick.eyebrow': 'DÉVELOPPEMENT',
     'login.quick.title': 'Connexion rapide',
     'login.quick.description':
@@ -255,6 +261,9 @@ const translations: Record<UiLanguage, Record<string, string>> = {
     'login.submit': 'Sign in',
     'login.submitting': 'Signing in…',
     'login.error': 'Invalid sign-in details. Please try again.',
+    'login.mfaCode': 'Authenticator or recovery code',
+    'login.mfaSubmit': 'Verify code',
+    'login.mfaError': 'The verification code is invalid or expired.',
     'login.quick.eyebrow': 'DEVELOPMENT',
     'login.quick.title': 'Quick sign-in',
     'login.quick.description':

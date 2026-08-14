@@ -25,8 +25,8 @@ export function ChangePasswordScreen({ onChanged }: ChangePasswordScreenProps) {
       return
     }
 
-    if (newPassword.length < 12) {
-      setError('Yeni parola en az 12 karakter olmalıdır.')
+    if (newPassword.length < 16) {
+      setError('Yeni parola en az 16 karakter olmalıdır.')
       return
     }
 
@@ -95,7 +95,7 @@ export function ChangePasswordScreen({ onChanged }: ChangePasswordScreenProps) {
               value={newPassword}
               onChange={(event) => setNewPassword(event.target.value)}
               autoComplete="new-password"
-              minLength={12}
+              minLength={16}
               required
             />
           </label>
@@ -107,7 +107,7 @@ export function ChangePasswordScreen({ onChanged }: ChangePasswordScreenProps) {
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}
               autoComplete="new-password"
-              minLength={12}
+              minLength={16}
               required
             />
           </label>

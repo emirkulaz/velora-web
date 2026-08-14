@@ -38,6 +38,8 @@ export function LoginScreen({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [rememberMe, setRememberMe] = useState(true)
   const [rememberUsername, setRememberUsername] = useState(rememberedLogin.length > 0)
+  const [mfaToken, setMfaToken] = useState('')
+  const [mfaCode, setMfaCode] = useState('')
   const rememberedTrikomex = isRememberedTrikomex(rememberedCompany)
   const showQuickLogin = isQuickLoginEnabled()
   const quickAccounts = showQuickLogin ? getQuickLoginAccounts() : []
@@ -62,9 +64,14 @@ export function LoginScreen({
         throw new Error('Giriş yapılamadı.')
       }
 
-      const { accessToken } = (await response.json()) as {
-        accessToken: string
+      const result = (await response.json()) as { accessToken?: string; mfaRequired?: boolean; mfaToken?: string }
+      if (result.mfaRequired && result.mfaToken) {
+        setPassword('')
+        setMfaToken(result.mfaToken)
+        return
       }
+      if (!result.accessToken) throw new Error('Giriş tamamlanamadı.')
+      const accessToken = result.accessToken
       const tokenStorage = rememberMe ? localStorage : sessionStorage
       const otherStorage = rememberMe ? sessionStorage : localStorage
       tokenStorage.setItem('velora.accessToken', accessToken)
@@ -104,6 +111,20 @@ export function LoginScreen({
     await authenticate(login, password)
   }
 
+  const handleMfaSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setError(''); setIsSubmitting(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/mfa/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mfaToken, code: mfaCode.trim() }) })
+      if (!response.ok) throw new Error('MFA doğrulanamadı.')
+      const { accessToken } = await response.json() as { accessToken: string }
+      const tokenStorage = rememberMe ? localStorage : sessionStorage
+      tokenStorage.setItem('velora.accessToken', accessToken)
+      ;(rememberMe ? sessionStorage : localStorage).removeItem('velora.accessToken')
+      onAuthenticated(rememberedCompany)
+    } catch { setError(t('login.mfaError')) } finally { setIsSubmitting(false) }
+  }
+
   const handleQuickLogin = async (account: QuickLoginAccount) => {
     setLogin(account.identifier)
     setPassword(account.password)
@@ -136,7 +157,12 @@ export function LoginScreen({
           </p>
         </div>
 
-        <form className="login-form" onSubmit={handleSubmit}>
+        {mfaToken ? <form className="login-form" onSubmit={handleMfaSubmit}>
+          <label>{t('login.mfaCode')}<input type="text" inputMode="numeric" autoComplete="one-time-code" value={mfaCode} onChange={(event) => setMfaCode(event.target.value)} required /></label>
+          {error && <p className="login-form__error" role="alert">{error}</p>}
+          <button type="submit" className="login-form__submit" disabled={isSubmitting}>{isSubmitting ? t('login.submitting') : t('login.mfaSubmit')}</button>
+          <button type="button" className="btn btn--ghost" onClick={() => { setMfaToken(''); setMfaCode('') }}>{t('common.cancel')}</button>
+        </form> : <form className="login-form" onSubmit={handleSubmit}>
           <label>
             {t('login.email')}
             <input
@@ -181,7 +207,7 @@ export function LoginScreen({
           <button type="submit" className="login-form__submit" disabled={isSubmitting}>
             {isSubmitting ? t('login.submitting') : t('login.submit')}
           </button>
-        </form>
+        </form>}
       </section>
 
       {showQuickLogin && quickAccounts.length > 0 ? (

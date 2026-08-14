@@ -154,7 +154,7 @@ export function UserManagementModule() {
         <form key={editingUser?.id ?? 'new'} className="demo-form" onSubmit={submit}>
           <label>Ad soyad<input name="name" type="text" minLength={2} defaultValue={editingUser?.name ?? ''} required /></label>
           <label>E-posta<input name="email" type="email" autoComplete="email" defaultValue={editingUser?.email ?? ''} required /></label>
-          {!editingUser && <label>{t('users.password')}<input name="password" type="password" minLength={12} autoComplete="new-password" required /></label>}
+          {!editingUser && <label>{t('users.password')}<input name="password" type="password" minLength={16} autoComplete="new-password" required /></label>}
           <label>Yetki rolü<select name="role" defaultValue={editingUser?.role ?? 'VIEWER'}>
             <option value="VIEWER">Görüntüleyici — yalnızca okuma</option>
             <option value="MEMBER">Operasyon kullanıcısı</option>
@@ -171,8 +171,8 @@ export function UserManagementModule() {
       <Modal open={Boolean(passwordUser)} title={t('users.setPassword')} onClose={() => { if (!isSubmitting) setPasswordUser(null) }}>
         <form key={passwordUser?.id ?? 'password'} className="demo-form" onSubmit={submitPassword}>
           <p>{t('users.passwordDescription', { name: passwordUser?.name ?? '' })}</p>
-          <label>{t('users.password')}<input name="password" type="password" minLength={12} maxLength={128} autoComplete="new-password" required /></label>
-          <label>{t('users.passwordConfirm')}<input name="passwordConfirmation" type="password" minLength={12} maxLength={128} autoComplete="new-password" required /></label>
+          <label>{t('users.password')}<input name="password" type="password" minLength={16} maxLength={128} autoComplete="new-password" required /></label>
+          <label>{t('users.passwordConfirm')}<input name="passwordConfirmation" type="password" minLength={16} maxLength={128} autoComplete="new-password" required /></label>
           <div className="form-actions"><button type="button" className="btn btn--ghost" onClick={() => setPasswordUser(null)} disabled={isSubmitting}>{t('common.cancel')}</button><button type="submit" className="btn btn--primary" disabled={isSubmitting}>{isSubmitting ? t('users.passwordSaving') : t('users.passwordSave')}</button></div>
         </form>
       </Modal>

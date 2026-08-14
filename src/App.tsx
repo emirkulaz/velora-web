@@ -3,6 +3,7 @@ import { AiCommandPanel } from './components/AiCommandPanel'
 import { ExchangeRateTicker } from './components/ExchangeRateTicker'
 import { Icon } from './components/Icons'
 import { LanguageSelector } from './components/LanguageSelector'
+import { MfaSetupPanel } from './components/MfaSetupPanel'
 import { LoginScreen } from './components/LoginScreen'
 import { StartupScreen } from './components/StartupScreen'
 import { BRAND_NAME, VeloraLogo } from './components/VeloraLogo'
@@ -395,6 +396,7 @@ function App() {
                       {avatarError}
                     </p>
                   ) : null}
+                  {currentUser?.role === 'ADMIN' || currentUser?.role === 'OWNER' ? <MfaSetupPanel /> : null}
                   <button type="button" onClick={logout}>{t('common.logout')}</button>
                 </div>
               )}
