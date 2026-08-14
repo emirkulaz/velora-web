@@ -54,7 +54,10 @@ export function ChangePasswordScreen({ onChanged }: ChangePasswordScreenProps) {
         throw new Error('Parola değiştirilemedi.')
       }
 
+      localStorage.removeItem('velora.accessToken')
+      sessionStorage.removeItem('velora.accessToken')
       onChanged()
+      window.location.reload()
     } catch {
       setError('Parola değiştirilemedi. Mevcut parolayı kontrol edin.')
     } finally {

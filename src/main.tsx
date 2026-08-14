@@ -13,7 +13,12 @@ setActiveUiLanguage('tr')
 applyDocumentDirection('tr')
 startEnforceLtrFields(document)
 
-registerSW({ immediate: true })
+const updateServiceWorker = registerSW({
+  immediate: true,
+  onNeedRefresh() {
+    void updateServiceWorker(true)
+  },
+})
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
