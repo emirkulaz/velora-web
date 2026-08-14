@@ -1,75 +1,40 @@
-# React + TypeScript + Vite
+# VEXOR Web
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+VEXOR ERP'nin React, TypeScript ve Vite tabanlı responsive web arayüzüdür. Türkçe, Fransızca ve İngilizceyi; rol bazlı modülleri; merkezi API katmanını ve PWA güncelleme akışını destekler.
 
-Currently, two official plugins are available:
+## Yerel geliştirme
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Node.js 22 gereklidir.
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```powershell
+npm ci
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Yerel API proxy ayarı yalnız geliştirme içindir. Production bundle API adresini ortam yapılandırmasından alır; `localhost` veya `127.0.0.1` içermemelidir.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Kalite kapıları
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```powershell
+npm run lint
+npm test
+npm run i18n:check
+npm run build
+npm run bundle:check
 ```
+
+Üç dil aynı çeviri anahtarı kümesini korumalıdır. Yeni kullanıcı metinleri sabit string yerine katalog anahtarı kullanmalı; sayılar ve tarihler seçilen locale göre biçimlenmelidir.
+
+## Production
+
+Canlı adres `https://erpvexor.com`, API `https://velora-production-01a9.up.railway.app` adresidir. Deploy yalnız Railway `brave-radiance / production / vexor-web` servisine yapılır. Build sonrası canlı HTML/asset sürümü ve PWA cache yenilenmesi gizli sekmede doğrulanır.
+
+Ek belgeler:
+
+- [FRONTEND_GUIDE.md](FRONTEND_GUIDE.md)
+- [I18N_GUIDE.md](I18N_GUIDE.md)
+- [PERFORMANCE.md](PERFORMANCE.md)
+- [DEVELOPMENT.md](DEVELOPMENT.md)
+- [CONTRIBUTING.md](CONTRIBUTING.md)
+- [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)
+
