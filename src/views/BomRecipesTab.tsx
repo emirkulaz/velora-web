@@ -1,7 +1,8 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from '../data/api'
-import type { CompanyPresentation } from '../data/companyBranding'
-import { materialLabel, materialShortLabel } from '../data/industryLabels'
+import { isTextileCompany, type CompanyPresentation } from '../data/companyBranding'
+import { useI18n } from '../i18n/I18nProvider'
 
 type ProductOption = {
   id: number
@@ -58,17 +59,20 @@ export function BomRecipesTab({
   company?: CompanyPresentation | null
   canWrite?: boolean
 }) {
+  const { t, formatNumber } = useI18n()
+  const materialName = t(isTextileCompany(company) ? 'boms.textileMaterial' : 'boms.material')
   const [boms, setBoms] = useState<Bom[]>([])
   const [products, setProducts] = useState<ProductOption[]>([])
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [productId, setProductId] = useState('')
-  const [name, setName] = useState('Reçete')
+  const [name, setName] = useState(() => t('boms.defaultName'))
+  const [deleteTarget, setDeleteTarget] = useState<Bom | null>(null)
   const [items, setItems] = useState<BomItem[]>([
     { materialProductId: 0, quantityPerUnit: 15, unit: 'GRAM', wastePercent: 3 },
   ])
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const [bomRows, productRows] = await Promise.all([
         apiGet<Bom[]>('/boms'),
@@ -78,44 +82,75 @@ export function BomRecipesTab({
       setProducts(productRows)
       setError('')
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Reçeteler alınamadı.')
+      setError(err instanceof ApiError ? err.message : t('boms.loadError'))
     }
-  }
+  }, [t])
 
   useEffect(() => {
-    void load()
-  }, [])
+    const timeoutId = window.setTimeout(() => void load(), 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [load])
 
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault()
     if (!canWrite || saving) return
     const validItems = items.filter((item) => item.materialProductId > 0)
     if (!productId || validItems.length === 0) {
-      setError(`Mamul ve en az bir ${materialShortLabel(company).toLocaleLowerCase('tr-TR')} seçin.`)
+      setError(t('boms.validation', { material: materialName.toLocaleLowerCase() }))
       return
     }
     setSaving(true)
     try {
       await apiPost('/boms', {
         productId: Number(productId),
-        name: name.trim() || 'Reçete',
+        name: name.trim() || t('boms.defaultName'),
         isActive: true,
         items: validItems,
       })
-      setName('Reçete')
+      setName(t('boms.defaultName'))
       await load()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Reçete kaydedilemedi.')
+      setError(err instanceof ApiError ? err.message : t('boms.saveError'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleActivate = async (bom: Bom) => {
+    if (!canWrite || saving) return
+    setSaving(true)
+    setError('')
+    try {
+      await apiPatch(`/boms/${bom.id}`, { isActive: true })
+      await load()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t('boms.actionError'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!deleteTarget || !canWrite || saving) return
+    setSaving(true)
+    setError('')
+    try {
+      await apiDelete(`/boms/${deleteTarget.id}`)
+      setDeleteTarget(null)
+      await load()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t('boms.actionError'))
     } finally {
       setSaving(false)
     }
   }
 
   return (
+    <>
     <section className="panel panel--full">
       <div className="panel__header">
-        <h2>Reçeteler</h2>
-        <p className="panel__meta">Aktif reçete üretim emrinin malzeme snapshot’ını üretir</p>
+        <h2>{t('boms.title')}</h2>
+        <p className="panel__meta">{t('boms.description')}</p>
       </div>
       {error && (
         <p className="demo-notice" role="alert">
@@ -125,9 +160,9 @@ export function BomRecipesTab({
       {canWrite && (
         <form className="demo-form" onSubmit={(e) => void handleCreate(e)} style={{ padding: 16 }}>
           <label>
-            Mamul
+            {t('boms.finishedProduct')}
             <select required value={productId} onChange={(e) => setProductId(e.target.value)}>
-              <option value="">Seçin</option>
+              <option value="">{t('boms.select')}</option>
               {products.map((product) => (
                 <option key={product.id} value={product.id}>
                   {product.code} · {product.name}
@@ -136,7 +171,7 @@ export function BomRecipesTab({
             </select>
           </label>
           <label>
-            Reçete adı
+            {t('boms.name')}
             <input value={name} onChange={(e) => setName(e.target.value)} />
           </label>
           {items.map((item, index) => (
@@ -150,7 +185,7 @@ export function BomRecipesTab({
                   setItems(next)
                 }}
               >
-                <option value="">{materialLabel(company)}</option>
+                <option value="">{materialName}</option>
                 {products.map((product) => (
                   <option key={product.id} value={product.id}>
                     {product.code} · {product.name}
@@ -182,7 +217,7 @@ export function BomRecipesTab({
                 <option value="MILLIMETER">mm</option>
                 <option value="CENTIMETER">cm</option>
                 <option value="METER">m</option>
-                <option value="PIECE">adet</option>
+                <option value="PIECE">{t('requests.unit.PIECE')}</option>
                 <option value="MILLILITER">ml</option>
                 <option value="LITER">l</option>
               </select>
@@ -198,7 +233,7 @@ export function BomRecipesTab({
                   setItems(next)
                 }}
                 style={{ width: 80 }}
-                title="Fire %"
+                title={t('boms.waste')}
               />
             </div>
           ))}
@@ -213,10 +248,10 @@ export function BomRecipesTab({
                 ])
               }
             >
-              + Malzeme
+              + {t('boms.addMaterial')}
             </button>
             <button type="submit" className="btn btn--primary" disabled={saving}>
-              {saving ? 'Kaydediliyor…' : 'Aktif reçete kaydet'}
+              {saving ? t('boms.saving') : t('boms.saveActive')}
             </button>
           </div>
         </form>
@@ -225,11 +260,11 @@ export function BomRecipesTab({
         <table className="data-table">
           <thead>
             <tr>
-              <th>Mamul</th>
-              <th>Reçete</th>
-              <th>Versiyon</th>
-              <th>Malzemeler</th>
-              <th>Durum</th>
+              <th>{t('boms.finishedProduct')}</th>
+              <th>{t('boms.recipe')}</th>
+              <th>{t('boms.version')}</th>
+              <th>{t('boms.materials')}</th>
+              <th>{t('boms.status')}</th>
               {canWrite && <th />}
             </tr>
           </thead>
@@ -247,29 +282,30 @@ export function BomRecipesTab({
                 <td>
                   {bom.items.map((item) => (
                     <div key={`${bom.id}-${item.materialProductId}`}>
-                      {item.materialName} · {item.quantityPerUnit} {UNIT_LABEL[item.unit]} / %
-                      {item.wastePercent} fire
+                      {item.materialName} · {formatNumber(item.quantityPerUnit)} {item.unit === 'PIECE' ? t('requests.unit.PIECE') : UNIT_LABEL[item.unit]} / {t('boms.wasteValue', { value: formatNumber(item.wastePercent) })}
                     </div>
                   ))}
                 </td>
-                <td>{bom.isActive ? 'Aktif' : 'Pasif'}</td>
+                <td>{bom.isActive ? t('boms.active') : t('boms.inactive')}</td>
                 {canWrite && (
                   <td>
                     {!bom.isActive && (
                       <button
                         type="button"
                         className="btn btn--ghost"
-                        onClick={() => void apiPatch(`/boms/${bom.id}`, { isActive: true }).then(load)}
+                        disabled={saving}
+                        onClick={() => void handleActivate(bom)}
                       >
-                        Aktifleştir
+                        {t('boms.activate')}
                       </button>
                     )}
                     <button
                       type="button"
                       className="btn btn--ghost"
-                      onClick={() => void apiDelete(`/boms/${bom.id}`).then(load)}
+                      disabled={saving}
+                      onClick={() => setDeleteTarget(bom)}
                     >
-                      Sil
+                      {t('boms.delete')}
                     </button>
                   </td>
                 )}
@@ -278,7 +314,7 @@ export function BomRecipesTab({
             {boms.length === 0 && (
               <tr>
                 <td colSpan={canWrite ? 6 : 5} className="empty-cell">
-                  Henüz reçete yok.
+                  {t('boms.empty')}
                 </td>
               </tr>
             )}
@@ -286,5 +322,14 @@ export function BomRecipesTab({
         </table>
       </div>
     </section>
+    <ConfirmDialog
+      open={deleteTarget != null}
+      title={t('boms.deleteTitle')}
+      message={deleteTarget ? t('boms.deleteConfirm', { name: deleteTarget.name }) : ''}
+      confirmLabel={t('boms.delete')}
+      onCancel={() => setDeleteTarget(null)}
+      onConfirm={() => void handleDelete()}
+    />
+    </>
   )
 }
