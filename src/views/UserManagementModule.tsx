@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 
 import { Modal } from '../components/Modal'
 import { ModuleSummary } from '../components/ModuleSummary'
 import { ModuleToolbar } from '../components/ModuleToolbar'
 import { apiGet, apiPatch, apiPost, apiRequest } from '../data/api'
-import { roleLabels, type AppUserRole } from '../data/roles'
+import type { AppUserRole } from '../data/roles'
 import { useI18n } from '../i18n/I18nProvider'
 
 type CompanyUser = {
@@ -19,7 +19,7 @@ type CompanyUser = {
 }
 
 export function UserManagementModule() {
-  const { language, t } = useI18n()
+  const { locale, t, formatDate } = useI18n()
   const [users, setUsers] = useState<CompanyUser[]>([])
   const [search, setSearch] = useState('')
   const [error, setError] = useState('')
@@ -29,23 +29,26 @@ export function UserManagementModule() {
   const [passwordUser, setPasswordUser] = useState<CompanyUser | null>(null)
   const [passwordNotice, setPasswordNotice] = useState('')
 
-  const loadUsers = () => {
+  const loadUsers = useCallback(() => {
     setError('')
     apiGet<CompanyUser[]>('/users')
       .then(setUsers)
-      .catch(() => setError('Kullanıcı hesapları alınamadı.'))
-  }
+      .catch(() => setError(t('userMgmt.loadError')))
+  }, [t])
 
-  useEffect(loadUsers, [])
+  useEffect(() => {
+    const timer = window.setTimeout(loadUsers, 0)
+    return () => window.clearTimeout(timer)
+  }, [loadUsers])
 
   const filtered = useMemo(() => {
-    const query = search.toLocaleLowerCase('tr-TR')
+    const query = search.toLocaleLowerCase(locale)
     return users.filter((user) =>
-      [user.name, user.email ?? '', roleLabels[user.role]].some((value) =>
-        value.toLocaleLowerCase('tr-TR').includes(query),
+      [user.name, user.email ?? '', t(`role.${user.role}`)].some((value) =>
+        value.toLocaleLowerCase(locale).includes(query),
       ),
     )
-  }, [search, users])
+  }, [locale, search, t, users])
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -76,7 +79,7 @@ export function UserManagementModule() {
       setEditingUser(null)
       loadUsers()
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Kullanıcı kaydedilemedi.')
+      setError(caught instanceof Error ? caught.message : t('userMgmt.saveError'))
     } finally {
       setIsSubmitting(false)
     }
@@ -126,46 +129,46 @@ export function UserManagementModule() {
   return (
     <>
       <ModuleSummary items={[
-        { label: 'Toplam Kullanıcı', value: String(users.length) },
-        { label: 'Aktif Hesap', value: String(users.filter((user) => user.isActive).length) },
-        { label: 'Yönetici', value: String(users.filter((user) => user.role === 'ADMIN').length) },
-        { label: 'Salt Okunur', value: String(users.filter((user) => user.role === 'VIEWER').length) },
+        { label: t('userMgmt.total'), value: String(users.length) },
+        { label: t('userMgmt.activeCount'), value: String(users.filter((user) => user.isActive).length) },
+        { label: t('userMgmt.adminCount'), value: String(users.filter((user) => user.role === 'ADMIN').length) },
+        { label: t('userMgmt.viewerCount'), value: String(users.filter((user) => user.role === 'VIEWER').length) },
       ]} />
       <section className="panel panel--full">
-        <div className="panel__header"><div><h2>Kullanıcı Yönetimi</h2><p>VEXOR’a giriş yapabilen hesaplar ve yetkileri</p></div></div>
+        <div className="panel__header"><div><h2>{t('userMgmt.title')}</h2><p>{t('userMgmt.subtitle')}</p></div></div>
         <ModuleToolbar
           search={search}
           onSearchChange={setSearch}
-          searchPlaceholder="Ad, e-posta veya rol ara..."
-          actionLabel="+ Kullanıcı Ekle"
+          searchPlaceholder={t('userMgmt.search')}
+          actionLabel={`+ ${t('userMgmt.add')}`}
           onAction={openCreateForm}
         />
         {error && <p className="demo-notice" role="alert">{error}</p>}
         {passwordNotice && <p className="demo-notice" role="status">{passwordNotice}</p>}
         <div className="table-wrap"><table className="data-table">
-          <thead><tr><th>Ad</th><th>E-posta</th><th>Yetki Rolü</th><th>Durum</th><th>Oluşturulma</th><th>İşlem</th></tr></thead>
+          <thead><tr><th>{t('userMgmt.name')}</th><th>{t('userMgmt.email')}</th><th>{t('userMgmt.role')}</th><th>{t('userMgmt.status')}</th><th>{t('userMgmt.created')}</th><th>{t('userMgmt.action')}</th></tr></thead>
           <tbody>
-            {filtered.map((user) => <tr key={user.id}><td><strong>{user.name}</strong></td><td>{user.email ?? '—'}</td><td>{t(`role.${user.role}`)}</td><td>{user.isActive ? t('users.active') : t('users.inactive')}</td><td className="date-cell">{new Date(user.createdAt).toLocaleDateString(language === 'fr' ? 'fr-DZ' : language === 'en' ? 'en-GB' : 'tr-TR')}</td><td className="row-actions"><button type="button" onClick={() => openEditForm(user)}>{t('users.edit')}</button>{user.isActive && <button type="button" onClick={() => { setError(''); setPasswordNotice(''); setPasswordUser(user) }}>{t('users.setPassword')}</button>}</td></tr>)}
-            {!error && filtered.length === 0 && <tr><td colSpan={6}>Henüz kullanıcı hesabı bulunmuyor.</td></tr>}
+            {filtered.map((user) => <tr key={user.id}><td><strong>{user.name}</strong></td><td>{user.email ?? '—'}</td><td>{t(`role.${user.role}`)}</td><td>{user.isActive ? t('users.active') : t('users.inactive')}</td><td className="date-cell">{formatDate(user.createdAt)}</td><td className="row-actions"><button type="button" onClick={() => openEditForm(user)}>{t('users.edit')}</button>{user.isActive && <button type="button" onClick={() => { setError(''); setPasswordNotice(''); setPasswordUser(user) }}>{t('users.setPassword')}</button>}</td></tr>)}
+            {!error && filtered.length === 0 && <tr><td colSpan={6}>{t('userMgmt.empty')}</td></tr>}
           </tbody>
         </table></div>
       </section>
-      <Modal open={formOpen} title={editingUser ? 'Kullanıcıyı Düzenle' : 'Yeni Kullanıcı Hesabı'} onClose={closeForm}>
+      <Modal open={formOpen} title={editingUser ? t('userMgmt.editTitle') : t('userMgmt.createTitle')} onClose={closeForm}>
         <form key={editingUser?.id ?? 'new'} className="demo-form" onSubmit={submit}>
-          <label>Ad soyad<input name="name" type="text" minLength={2} defaultValue={editingUser?.name ?? ''} required /></label>
-          <label>E-posta<input name="email" type="email" autoComplete="email" defaultValue={editingUser?.email ?? ''} required /></label>
+          <label>{t('userMgmt.fullName')}<input name="name" type="text" minLength={2} defaultValue={editingUser?.name ?? ''} required /></label>
+          <label>{t('userMgmt.email')}<input name="email" type="email" autoComplete="email" defaultValue={editingUser?.email ?? ''} required /></label>
           {!editingUser && <label>{t('users.password')}<input name="password" type="password" minLength={16} autoComplete="new-password" required /></label>}
-          <label>Yetki rolü<select name="role" defaultValue={editingUser?.role ?? 'VIEWER'}>
-            <option value="VIEWER">Görüntüleyici — yalnızca okuma</option>
-            <option value="MEMBER">Operasyon kullanıcısı</option>
-            <option value="ACCOUNTING_OPERATOR">Muhasebe Operatörü — finans ve cari</option>
-            <option value="ACCOUNTING_OPERATIONS">Muhasebe &amp; Operasyon — günlük operasyon ve finans</option>
-            <option value="PRODUCTION_MANAGER">Üretim Müdürü — üretim ve stok</option>
-            <option value="ADMIN">Yönetici — tam yetki</option>
-            <option value="OWNER">Şirket Sahibi — tam şirket yetkisi</option>
+          <label>{t('userMgmt.role')}<select name="role" defaultValue={editingUser?.role ?? 'VIEWER'}>
+            <option value="VIEWER">{t('userMgmt.role.VIEWER')}</option>
+            <option value="MEMBER">{t('userMgmt.role.MEMBER')}</option>
+            <option value="ACCOUNTING_OPERATOR">{t('userMgmt.role.ACCOUNTING_OPERATOR')}</option>
+            <option value="ACCOUNTING_OPERATIONS">{t('userMgmt.role.ACCOUNTING_OPERATIONS')}</option>
+            <option value="PRODUCTION_MANAGER">{t('userMgmt.role.PRODUCTION_MANAGER')}</option>
+            <option value="ADMIN">{t('userMgmt.role.ADMIN')}</option>
+            <option value="OWNER">{t('userMgmt.role.OWNER')}</option>
           </select></label>
-          {editingUser && <label><input name="isActive" type="checkbox" defaultChecked={editingUser.isActive} /> Aktif kullanıcı</label>}
-          <div className="form-actions"><button type="button" className="btn btn--ghost" onClick={closeForm}>Vazgeç</button><button type="submit" className="btn btn--primary" disabled={isSubmitting}>{isSubmitting ? 'Kaydediliyor…' : editingUser ? 'Değişiklikleri Kaydet' : 'Kullanıcı Oluştur'}</button></div>
+          {editingUser && <label><input name="isActive" type="checkbox" defaultChecked={editingUser.isActive} /> {t('userMgmt.activeUser')}</label>}
+          <div className="form-actions"><button type="button" className="btn btn--ghost" onClick={closeForm}>{t('common.cancel')}</button><button type="submit" className="btn btn--primary" disabled={isSubmitting}>{isSubmitting ? t('userMgmt.saving') : editingUser ? t('userMgmt.saveChanges') : t('userMgmt.create')}</button></div>
         </form>
       </Modal>
       <Modal open={Boolean(passwordUser)} title={t('users.setPassword')} onClose={() => { if (!isSubmitting) setPasswordUser(null) }}>
