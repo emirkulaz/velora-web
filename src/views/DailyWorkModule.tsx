@@ -7,7 +7,7 @@ import { markOpenCustomerRequestCreate } from './customerRequestActions'
 import {
   markOpenFinanceCash,
   markOpenFinanceCollection,
-} from './FinanceModule'
+} from './financeActions'
 import { markOpenInventoryMovement } from './inventoryActions'
 import { markOpenOrderCreate } from './orderActions'
 

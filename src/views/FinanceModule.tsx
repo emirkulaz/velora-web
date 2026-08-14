@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Modal } from '../components/Modal'
 import { ModuleSummary } from '../components/ModuleSummary'
 import { ModuleToolbar } from '../components/ModuleToolbar'
 import { ApiError, apiGet, apiPost } from '../data/api'
+import { useI18n } from '../i18n/I18nProvider'
 import { FinanceDebtsTab } from './FinanceDebtsTab'
 import { CashFlowTab } from './CashFlowTab'
 
@@ -65,18 +66,6 @@ function amount(value: Amount | null | undefined) {
   return Number(value ?? 0)
 }
 
-function formatAmount(value: Amount | null | undefined) {
-  return amount(value).toLocaleString('fr-DZ', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
-}
-
-function formatDate(value: string | null) {
-  if (!value) return '—'
-  return new Date(value).toLocaleDateString('tr-TR', { timeZone: 'Africa/Algiers' })
-}
-
 function todayYmd(): string {
   const now = new Date()
   const algiers = new Date(
@@ -101,6 +90,12 @@ function normalizeAccounts(payload: unknown): CashAccountSummary[] {
 }
 
 export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
+  const { locale, t, formatDate, formatNumber } = useI18n()
+  const formatAmount = useCallback(
+    (value: Amount | null | undefined) =>
+      formatNumber(amount(value), { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    [formatNumber],
+  )
   const [tab, setTab] = useState<FinanceTab>('cash')
   const [search, setSearch] = useState('')
   const [ledgerSearch, setLedgerSearch] = useState('')
@@ -130,7 +125,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
   const [collectionDescription, setCollectionDescription] = useState('')
   const [collectionAccountId, setCollectionAccountId] = useState('')
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       const [cashTransactions, cashSummary, ledgerSummary, customerRows] = await Promise.all([
@@ -145,18 +140,19 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
       setCustomers(customerRows.map((c) => ({ id: c.id, name: c.name })))
       setError('')
     } catch {
-      setError('Finans verileri henüz alınamadı. API bağlantısını kontrol edin.')
+      setError(t('finance.loadError'))
       setTransactions([])
       setAccounts([])
       setLedgerCustomers([])
     } finally {
       setLoading(false)
     }
-  }
+  }, [t])
 
   useEffect(() => {
-    void load()
-  }, [])
+    const timer = window.setTimeout(() => void load(), 0)
+    return () => window.clearTimeout(timer)
+  }, [load])
 
   useEffect(() => {
     try {
@@ -170,7 +166,8 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
         stored === 'ledger'
       ) {
         sessionStorage.removeItem(FINANCE_TAB_FLAG)
-        setTab(stored)
+        const timer = window.setTimeout(() => setTab(stored), 0)
+        return () => window.clearTimeout(timer)
       }
     } catch {
       // ignore
@@ -179,15 +176,19 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
 
   useEffect(() => {
     if (tab !== 'receivables' || ledgerCustomers.length === 0) return
+    let timer: number | undefined
     try {
       const raw = sessionStorage.getItem('velora.finance.receivableCustomerId')
       if (!raw) return
       sessionStorage.removeItem('velora.finance.receivableCustomerId')
       const customerId = Number(raw)
       const row = ledgerCustomers.find((item) => item.customerId === customerId)
-      if (row) setLedgerSearch(row.customerName)
+      if (row) timer = window.setTimeout(() => setLedgerSearch(row.customerName), 0)
     } catch {
       // ignore
+    }
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer)
     }
   }, [tab, ledgerCustomers])
 
@@ -223,19 +224,31 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
 
   useEffect(() => {
     if (!canWrite) return
+    let timer: number | undefined
     try {
-      if (sessionStorage.getItem(OPEN_CASH_FLAG) === '1') {
+      const shouldOpenCash = sessionStorage.getItem(OPEN_CASH_FLAG) === '1'
+      const shouldOpenCollection = sessionStorage.getItem(OPEN_COLLECTION_FLAG) === '1'
+      if (shouldOpenCash) {
         sessionStorage.removeItem(OPEN_CASH_FLAG)
-        resetCashForm()
-        setCashOpen(true)
       }
-      if (sessionStorage.getItem(OPEN_COLLECTION_FLAG) === '1') {
+      if (shouldOpenCollection) {
         sessionStorage.removeItem(OPEN_COLLECTION_FLAG)
-        resetCollectionForm()
-        setCollectionOpen(true)
       }
+      timer = window.setTimeout(() => {
+        if (shouldOpenCash) {
+          resetCashForm()
+          setCashOpen(true)
+        }
+        if (shouldOpenCollection) {
+          resetCollectionForm()
+          setCollectionOpen(true)
+        }
+      }, 0)
     } catch {
       // ignore storage errors
+    }
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer)
     }
   }, [canWrite])
 
@@ -244,11 +257,11 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
     if (!canWrite || saving) return
     const amt = Number(cashAmount)
     if (!Number.isFinite(amt) || amt < 0.01) {
-      setCashFormError('Geçerli bir tutar girin.')
+      setCashFormError(t('finance.invalidAmount'))
       return
     }
     if (!cashCategory.trim() || !cashDescription.trim()) {
-      setCashFormError('Kategori ve açıklama zorunludur.')
+      setCashFormError(t('finance.categoryDescriptionRequired'))
       return
     }
     setSaving(true)
@@ -269,7 +282,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
       await load()
     } catch (err) {
       setCashFormError(
-        err instanceof ApiError ? err.message : 'Kasa hareketi kaydedilemedi.',
+        err instanceof ApiError ? err.message : t('finance.cashSaveError'),
       )
     } finally {
       setSaving(false)
@@ -280,16 +293,16 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
     event.preventDefault()
     if (!canWrite || saving) return
     if (!collectionCustomerId) {
-      setCollectionFormError('Müşteri seçin.')
+      setCollectionFormError(t('finance.selectCustomer'))
       return
     }
     const amt = Number(collectionAmount)
     if (!Number.isFinite(amt) || amt < 0.01) {
-      setCollectionFormError('Geçerli bir tutar girin.')
+      setCollectionFormError(t('finance.invalidAmount'))
       return
     }
     if (!collectionDescription.trim()) {
-      setCollectionFormError('Açıklama zorunludur.')
+      setCollectionFormError(t('finance.descriptionRequired'))
       return
     }
     setSaving(true)
@@ -310,7 +323,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
       await load()
     } catch (err) {
       setCollectionFormError(
-        err instanceof ApiError ? err.message : 'Tahsilat kaydedilemedi.',
+        err instanceof ApiError ? err.message : t('finance.collectionSaveError'),
       )
     } finally {
       setSaving(false)
@@ -318,20 +331,20 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
   }
 
   const filteredCash = useMemo(() => {
-    const query = search.toLocaleLowerCase('tr-TR')
+    const query = search.toLocaleLowerCase(locale)
     return transactions.filter((transaction) =>
       [transaction.description, transaction.cashAccount?.name, transaction.cashAccount?.code]
         .filter(Boolean)
-        .some((value) => String(value).toLocaleLowerCase('tr-TR').includes(query)),
+        .some((value) => String(value).toLocaleLowerCase(locale).includes(query)),
     )
-  }, [search, transactions])
+  }, [locale, search, transactions])
 
   const filteredLedger = useMemo(() => {
-    const query = ledgerSearch.toLocaleLowerCase('tr-TR')
+    const query = ledgerSearch.toLocaleLowerCase(locale)
     return ledgerCustomers.filter((row) =>
-      row.customerName.toLocaleLowerCase('tr-TR').includes(query),
+      row.customerName.toLocaleLowerCase(locale).includes(query),
     )
-  }, [ledgerSearch, ledgerCustomers])
+  }, [ledgerSearch, ledgerCustomers, locale])
 
   const totalBalance = accounts.reduce((total, account) => total + amount(account.balance), 0)
   const totalReceivable = ledgerCustomers
@@ -344,21 +357,21 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
   return (
     <>
       <div className="module-tabs" style={{ marginBottom: 16 }}>
-        <button type="button" className={tab === 'cash' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('cash')}>Kasa</button>
-        <button type="button" className={tab === 'cashflow' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('cashflow')}>Nakit Akışı</button>
-        <button type="button" className={tab === 'receivables' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('receivables')}>Alacaklarım</button>
-        <button type="button" className={tab === 'debts' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('debts')}>Borçlarım</button>
-        <button type="button" className={tab === 'expenses' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('expenses')}>Giderler</button>
-        <button type="button" className={tab === 'ledger' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('ledger')}>Cari Hesaplar</button>
+        <button type="button" className={tab === 'cash' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('cash')}>{t('finance.tab.cash')}</button>
+        <button type="button" className={tab === 'cashflow' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('cashflow')}>{t('finance.tab.cashflow')}</button>
+        <button type="button" className={tab === 'receivables' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('receivables')}>{t('finance.tab.receivables')}</button>
+        <button type="button" className={tab === 'debts' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('debts')}>{t('finance.tab.debts')}</button>
+        <button type="button" className={tab === 'expenses' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('expenses')}>{t('finance.tab.expenses')}</button>
+        <button type="button" className={tab === 'ledger' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('ledger')}>{t('finance.tab.ledger')}</button>
       </div>
 
       {tab !== 'debts' && tab !== 'cashflow' && (
       <ModuleSummary
         items={[
-          { label: 'Kasa Bakiyesi', value: formatAmount(totalBalance), unit: 'DZD' },
-          { label: 'Kasa Hareketi', value: String(transactions.length) },
-          { label: 'Müşteri Alacağı', value: formatAmount(totalReceivable), unit: 'DZD' },
-          { label: 'Cari Hareket', value: String(ledgerMovementCount) },
+          { label: t('finance.cashBalance'), value: formatAmount(totalBalance), unit: 'DZD' },
+          { label: t('finance.cashMovements'), value: String(transactions.length) },
+          { label: t('finance.customerReceivable'), value: formatAmount(totalReceivable), unit: 'DZD' },
+          { label: t('finance.ledgerMovements'), value: String(ledgerMovementCount) },
         ]}
       />
       )}
@@ -388,34 +401,33 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
       {tab === 'ledger' && (
       <section className="panel panel--full">
         <div className="panel__header">
-          <h2>Cari Hesaplar</h2>
-          <p className="panel__meta">Müşteri carisi — tedarikçi borcu burada değil</p>
+          <h2>{t('finance.ledgerTitle')}</h2>
+          <p className="panel__meta">{t('finance.customerLedgerOnly')}</p>
           <span className="panel__meta">
-            {loading ? 'Yükleniyor…' : `${filteredLedger.length} müşteri`}
+            {loading ? t('common.loading') : t('finance.customerCount', { count: filteredLedger.length })}
           </span>
         </div>
         <ModuleToolbar
           reportType="cash"
-          reportLabel="Kasa Raporu"
+          reportLabel={t('finance.cashReport')}
           search={ledgerSearch}
           onSearchChange={setLedgerSearch}
-          searchPlaceholder="Müşteri ara..."
+          searchPlaceholder={t('finance.searchCustomer')}
         />
         <p className="finance-notes" style={{ marginBottom: 12 }}>
-          Pozitif bakiye: müşteri bize borçlu. Negatif bakiye: müşteri alacaklı veya avanslı.
-          Yalnızca Excel aktarımı ve VEXOR’da oluşturulan hareketler gösterilir (DEMO yok).
+          {t('finance.ledgerMeaning')}
         </p>
         <div className="table-wrap">
           <table className="data-table">
             <thead>
               <tr>
-                <th>Müşteri</th>
-                <th>Toplam Satış</th>
-                <th>Toplam Tahsilat</th>
-                <th>Toplam İade</th>
-                <th>Güncel Bakiye</th>
-                <th>Son Hareket</th>
-                <th>İnceleme</th>
+                <th>{t('finance.customer')}</th>
+                <th>{t('finance.totalSales')}</th>
+                <th>{t('finance.totalCollections')}</th>
+                <th>{t('finance.totalReturns')}</th>
+                <th>{t('finance.currentBalance')}</th>
+                <th>{t('finance.lastMovement')}</th>
+                <th>{t('finance.review')}</th>
               </tr>
             </thead>
             <tbody>
@@ -426,14 +438,14 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
                   <td className="amount-cell">{formatAmount(row.totalPayments)}</td>
                   <td className="amount-cell">{formatAmount(row.totalReturns)}</td>
                   <td className="amount-cell">{formatAmount(row.balance)}</td>
-                  <td className="date-cell">{formatDate(row.lastMovementAt)}</td>
-                  <td>{row.reviewRequired ? 'REVIEW_REQUIRED' : '—'}</td>
+                  <td className="date-cell">{row.lastMovementAt ? formatDate(row.lastMovementAt) : '—'}</td>
+                  <td>{row.reviewRequired ? t('finance.reviewRequired') : '—'}</td>
                 </tr>
               ))}
               {!loading && filteredLedger.length === 0 && (
                 <tr>
                   <td colSpan={7} className="empty-cell">
-                    Henüz cari hareket aktarılmadı. Excel import onayından sonra burada görünecek.
+                    {t('finance.noLedger')}
                   </td>
                 </tr>
               )}
@@ -446,25 +458,25 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
       {tab === 'receivables' && (
       <section className="panel panel--full">
         <div className="panel__header">
-          <h2>Alacaklarım</h2>
-          <span className="panel__meta">Müşterilerin şirkete borcu</span>
+          <h2>{t('finance.receivables')}</h2>
+          <span className="panel__meta">{t('finance.customerDebtHint')}</span>
         </div>
         <ModuleToolbar
           reportType="ledger"
-          reportLabel="Cari Raporu"
+          reportLabel={t('finance.ledgerReport')}
           search={ledgerSearch}
           onSearchChange={setLedgerSearch}
-          searchPlaceholder="Müşteri ara..."
+          searchPlaceholder={t('finance.searchCustomer')}
         />
         <div className="table-wrap">
           <table className="data-table">
             <thead>
               <tr>
-                <th>Müşteri</th>
-                <th>Toplam Satış</th>
-                <th>Toplam Tahsilat</th>
-                <th>Kalan Alacak</th>
-                <th>Son Hareket</th>
+                <th>{t('finance.customer')}</th>
+                <th>{t('finance.totalSales')}</th>
+                <th>{t('finance.totalCollections')}</th>
+                <th>{t('finance.remainingReceivable')}</th>
+                <th>{t('finance.lastMovement')}</th>
               </tr>
             </thead>
             <tbody>
@@ -474,13 +486,13 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
                   <td className="amount-cell">{formatAmount(row.totalSales)}</td>
                   <td className="amount-cell">{formatAmount(row.totalPayments)}</td>
                   <td className="amount-cell">{formatAmount(row.balance)}</td>
-                  <td className="date-cell">{formatDate(row.lastMovementAt)}</td>
+                  <td className="date-cell">{row.lastMovementAt ? formatDate(row.lastMovementAt) : '—'}</td>
                 </tr>
               ))}
               {!loading && receivableRows.length === 0 && (
                 <tr>
                   <td colSpan={5} className="empty-cell">
-                    Açık müşteri alacağı yok.
+                    {t('finance.noReceivables')}
                   </td>
                 </tr>
               )}
@@ -493,30 +505,30 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
       {tab === 'expenses' && (
       <section className="panel panel--full">
         <div className="panel__header">
-          <h2>Giderler</h2>
-          <span className="panel__meta">Kasa çıkışları (CASH_OUT)</span>
+          <h2>{t('finance.expenses')}</h2>
+          <span className="panel__meta">{t('finance.cashOutHint')}</span>
         </div>
         <ModuleToolbar
           reportType="cash"
-          reportLabel="Kasa Raporu"
+          reportLabel={t('finance.cashReport')}
           search={search}
           onSearchChange={setSearch}
-          searchPlaceholder="Açıklama ara..."
+          searchPlaceholder={t('finance.searchDescription')}
         />
         <div className="table-wrap">
           <table className="data-table">
             <thead>
               <tr>
-                <th>Tarih</th>
-                <th>Açıklama</th>
-                <th>Kasa</th>
-                <th>Tutar (DZD)</th>
+                <th>{t('finance.date')}</th>
+                <th>{t('finance.description')}</th>
+                <th>{t('finance.cashAccount')}</th>
+                <th>{t('finance.amountDzd')}</th>
               </tr>
             </thead>
             <tbody>
               {expenseRows.map((row) => (
                 <tr key={row.id}>
-                  <td className="date-cell">{new Date(row.transactionAt).toLocaleDateString('tr-TR')}</td>
+                  <td className="date-cell">{formatDate(row.transactionAt)}</td>
                   <td>{row.description}</td>
                   <td>{row.cashAccount?.name ?? '—'}</td>
                   <td className="amount-cell">{formatAmount(row.credit)}</td>
@@ -524,7 +536,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
               ))}
               {!loading && expenseRows.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="empty-cell">Henüz gider hareketi yok.</td>
+                  <td colSpan={4} className="empty-cell">{t('finance.noExpenses')}</td>
                 </tr>
               )}
             </tbody>
@@ -537,28 +549,28 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
       <div className="finance-grid">
         <section className="panel panel--full">
           <div className="panel__header">
-            <h2>Kasa Hareketleri</h2>
+            <h2>{t('finance.cashTransactions')}</h2>
             {canWrite ? (
               <div className="form-actions" style={{ margin: 0 }}>
                 <button type="button" className="btn btn--primary" onClick={openCash}>
-                  + Kasa hareketi
+                  + {t('finance.newCashMovement')}
                 </button>
                 <button type="button" className="btn btn--ghost" onClick={openCollection}>
-                  + Tahsilat
+                  + {t('finance.collection')}
                 </button>
               </div>
             ) : (
               <span className="panel__meta">
-                {loading ? 'Yükleniyor…' : `${filteredCash.length} kayıt`}
+                {loading ? t('common.loading') : t('finance.recordCount', { count: filteredCash.length })}
               </span>
             )}
           </div>
           <ModuleToolbar
             reportType="ledger"
-            reportLabel="Cari Raporu"
+            reportLabel={t('finance.ledgerReport')}
             search={search}
             onSearchChange={setSearch}
-            searchPlaceholder="Açıklama veya kasa hesabı ara..."
+            searchPlaceholder={t('finance.searchCash')}
           />
           {error && (
             <p className="demo-notice" role="alert">
@@ -569,19 +581,19 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Tarih</th>
-                  <th>Açıklama</th>
-                  <th>Kasa</th>
-                  <th>Borç (DZD)</th>
-                  <th>Alacak (DZD)</th>
-                  <th>Bakiye (DZD)</th>
+                  <th>{t('finance.date')}</th>
+                  <th>{t('finance.description')}</th>
+                  <th>{t('finance.cashAccount')}</th>
+                  <th>{t('finance.debitDzd')}</th>
+                  <th>{t('finance.creditDzd')}</th>
+                  <th>{t('finance.balanceDzd')}</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredCash.map((t) => (
                   <tr key={t.id}>
                     <td className="date-cell">
-                      {new Date(t.transactionAt).toLocaleDateString('tr-TR')}
+                      {formatDate(t.transactionAt)}
                     </td>
                     <td>{t.description}</td>
                     <td>{t.cashAccount?.name ?? '—'}</td>
@@ -595,7 +607,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
                 {!loading && !error && filteredCash.length === 0 && (
                   <tr>
                     <td colSpan={6} className="empty-cell">
-                      Henüz kasa hareketi aktarılmadı.
+                      {t('finance.noCashMovements')}
                     </td>
                   </tr>
                 )}
@@ -606,16 +618,16 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
 
         <section className="panel">
           <div className="panel__header">
-            <h2>Kasa Hesapları</h2>
-            <span className="panel__meta">{accounts.length} hesap</span>
+            <h2>{t('finance.cashAccounts')}</h2>
+            <span className="panel__meta">{t('finance.accountCount', { count: accounts.length })}</span>
           </div>
           <div className="table-wrap">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Hesap</th>
-                  <th>Para Birimi</th>
-                  <th>Bakiye</th>
+                  <th>{t('finance.account')}</th>
+                  <th>{t('finance.currency')}</th>
+                  <th>{t('finance.balance')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -629,7 +641,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
                 {!loading && !error && accounts.length === 0 && (
                   <tr>
                     <td colSpan={3} className="empty-cell">
-                      Henüz kasa hesabı oluşturulmadı.
+                      {t('finance.noCashAccounts')}
                     </td>
                   </tr>
                 )}
@@ -638,10 +650,10 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
           </div>
           <div className="finance-notes">
             <p>
-              Para birimi: <strong>DZD</strong>
+              {t('finance.currency')}: <strong>DZD</strong>
             </p>
             <p>
-              Saat dilimi: <strong>Africa/Algiers</strong>
+              {t('finance.timezone')}: <strong>Africa/Algiers</strong>
             </p>
           </div>
         </section>
@@ -650,7 +662,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
 
       <Modal
         open={cashOpen}
-        title="Kasa hareketi"
+        title={t('finance.newCashMovement')}
         onClose={() => {
           setCashOpen(false)
           setCashFormError('')
@@ -658,18 +670,18 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
       >
         <form className="demo-form" onSubmit={(e) => void handleCashSubmit(e)}>
           <label>
-            Tip
+            {t('finance.type')}
             <select
               dir="ltr"
               value={cashType}
               onChange={(e) => setCashType(e.target.value as CashType)}
             >
-              <option value="CASH_IN">Giriş (CASH_IN)</option>
-              <option value="CASH_OUT">Çıkış (CASH_OUT)</option>
+              <option value="CASH_IN">{t('finance.cashType.CASH_IN')}</option>
+              <option value="CASH_OUT">{t('finance.cashType.CASH_OUT')}</option>
             </select>
           </label>
           <label>
-            Tutar (DZD)
+            {t('finance.amountDzd')}
             <input
               type="number"
               min="0.01"
@@ -681,7 +693,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            Tarih
+            {t('finance.date')}
             <input
               type="date"
               required
@@ -691,17 +703,17 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            Kategori
+            {t('finance.category')}
             <input
               required
               dir="ltr"
               value={cashCategory}
               onChange={(e) => setCashCategory(e.target.value)}
-              placeholder="Örn. Satış, Gider, Transfer"
+              placeholder={t('finance.categoryPlaceholder')}
             />
           </label>
           <label>
-            Açıklama
+            {t('finance.description')}
             <input
               required
               dir="ltr"
@@ -710,13 +722,13 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            İlişkili müşteri (opsiyonel)
+            {t('finance.relatedCustomer')}
             <select
               dir="ltr"
               value={cashCustomerId}
               onChange={(e) => setCashCustomerId(e.target.value)}
             >
-              <option value="">Yok</option>
+              <option value="">{t('finance.none')}</option>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -725,13 +737,13 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
             </select>
           </label>
           <label>
-            Kasa hesabı (opsiyonel)
+            {t('finance.optionalCashAccount')}
             <select
               dir="ltr"
               value={cashAccountId}
               onChange={(e) => setCashAccountId(e.target.value)}
             >
-              <option value="">Varsayılan</option>
+              <option value="">{t('finance.default')}</option>
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.code} — {a.name}
@@ -753,10 +765,10 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
                 setCashFormError('')
               }}
             >
-              Vazgeç
+              {t('common.cancel')}
             </button>
             <button type="submit" className="btn btn--primary" disabled={saving}>
-              {saving ? 'Kaydediliyor…' : 'Kaydet'}
+              {saving ? t('finance.saving') : t('common.save')}
             </button>
           </div>
         </form>
@@ -764,7 +776,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
 
       <Modal
         open={collectionOpen}
-        title="Tahsilat"
+        title={t('finance.collection')}
         onClose={() => {
           setCollectionOpen(false)
           setCollectionFormError('')
@@ -772,14 +784,14 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
       >
         <form className="demo-form" onSubmit={(e) => void handleCollectionSubmit(e)}>
           <label>
-            Müşteri
+            {t('finance.customer')}
             <select
               required
               dir="ltr"
               value={collectionCustomerId}
               onChange={(e) => setCollectionCustomerId(e.target.value)}
             >
-              <option value="">Seçin</option>
+              <option value="">{t('finance.select')}</option>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -788,7 +800,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
             </select>
           </label>
           <label>
-            Tutar (DZD)
+            {t('finance.amountDzd')}
             <input
               type="number"
               min="0.01"
@@ -800,7 +812,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            Tarih
+            {t('finance.date')}
             <input
               type="date"
               required
@@ -810,7 +822,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            Açıklama
+            {t('finance.description')}
             <input
               required
               dir="ltr"
@@ -819,13 +831,13 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            Kasa hesabı (opsiyonel)
+            {t('finance.optionalCashAccount')}
             <select
               dir="ltr"
               value={collectionAccountId}
               onChange={(e) => setCollectionAccountId(e.target.value)}
             >
-              <option value="">Varsayılan</option>
+              <option value="">{t('finance.default')}</option>
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.code} — {a.name}
@@ -835,7 +847,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
           </label>
           {customers.length === 0 && (
             <p className="demo-notice" role="status">
-              Önce müşteri kaydı oluşturun.
+              {t('finance.createCustomerFirst')}
             </p>
           )}
           {collectionFormError && (
@@ -852,36 +864,18 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
                 setCollectionFormError('')
               }}
             >
-              Vazgeç
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               className="btn btn--primary"
               disabled={saving || customers.length === 0}
             >
-              {saving ? 'Kaydediliyor…' : 'Kaydet'}
+              {saving ? t('finance.saving') : t('common.save')}
             </button>
           </div>
         </form>
       </Modal>
     </>
   )
-}
-
-/** Günlük İşler vb. → kasa hareketi modalını açar. */
-export function markOpenFinanceCash(): void {
-  try {
-    sessionStorage.setItem(OPEN_CASH_FLAG, '1')
-  } catch {
-    // ignore
-  }
-}
-
-/** Günlük İşler vb. → tahsilat modalını açar. */
-export function markOpenFinanceCollection(): void {
-  try {
-    sessionStorage.setItem(OPEN_COLLECTION_FLAG, '1')
-  } catch {
-    // ignore
-  }
 }
