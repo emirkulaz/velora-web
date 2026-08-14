@@ -51,7 +51,14 @@ interface ErpChatResponse {
 }
 
 const COMMAND_PLACEHOLDER =
-  'Örn: Bugünkü üretimi özetle · Ahmet Tekstil bakiyesi · 500 kg stok girişi…'
+  "VEXOR'a sorun"
+
+const QUICK_COMMANDS = [
+  'Bugün neler oldu?',
+  'Kasa ve cari durumunu özetle',
+  'Kritik stokları göster',
+  'Geciken siparişleri listele',
+]
 
 function formatAlgiersTime(value: string | Date): string {
   const date = typeof value === 'string' ? new Date(value) : value
@@ -90,7 +97,7 @@ function mapErrorMessage(error: unknown): string {
   return error.message || 'Yanıt alınamadı. Lütfen daha sonra tekrar deneyin.'
 }
 
-export function AiCommandPanel() {
+export function AiCommandPanel({ userName }: { userName?: string }) {
   const [commandInput, setCommandInput] = useState('')
   const [response, setResponse] = useState<AssistantResponse | null>(null)
   const [error, setError] = useState('')
@@ -98,6 +105,7 @@ export function AiCommandPanel() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [evidenceOpen, setEvidenceOpen] = useState(false)
+  const [quickOpen, setQuickOpen] = useState(false)
   const commandInputRef = useRef<HTMLTextAreaElement>(null)
   const lastSentRef = useRef('')
   const voice = useSpeechToText((transcript) => {
@@ -180,17 +188,26 @@ export function AiCommandPanel() {
     !preview?.applied &&
     Boolean(preview?.previewToken) &&
     preview?.ready !== false
+  const firstName = userName?.trim().split(/\s+/)[0]
 
   return (
     <section className="ai-command" aria-label="VEXOR'a Sor">
       <div className="ai-command__header">
-        <h2 className="ai-command__title">VEXOR'a Sor</h2>
-        <p className="ai-command__subtitle">
-          Executive Copilot — şirket verisine dayalı özet; yazma işlemlerinde onay ister
-        </p>
+        <span className="ai-command__eyebrow"><Icon name="spark" /> VEXOR'A SOR</span>
+        <h2 className="ai-command__title">{firstName ? `Nasıl gidiyor, ${firstName}?` : 'Bugün nasıl yardımcı olabilirim?'}</h2>
+        <p className="ai-command__subtitle">Şirket verilerinizi sorun, VEXOR doğru modülü sizin için bulsun.</p>
       </div>
 
       <div className="ai-command__input-wrap">
+        <button
+          type="button"
+          className={`ai-command__plus ${quickOpen ? 'ai-command__plus--active' : ''}`}
+          onClick={() => setQuickOpen((open) => !open)}
+          aria-label="Hazır soruları göster"
+          aria-expanded={quickOpen}
+        >
+          <span aria-hidden="true">+</span>
+        </button>
         <textarea
           ref={commandInputRef}
           className="ai-command__input"
@@ -213,6 +230,7 @@ export function AiCommandPanel() {
           aria-label="VEXOR'a komut girin"
         />
         <div className="ai-command__actions">
+          <span className="ai-command__mode"><i aria-hidden="true" /> VEXOR AI</span>
           <button
             type="button"
             className={`ai-command__voice ${voice.isListening ? 'ai-command__voice--listening' : ''}`}
@@ -235,11 +253,25 @@ export function AiCommandPanel() {
             className="ai-command__submit"
             onClick={() => void handleCommandSubmit()}
             disabled={!commandInput.trim() || loading || confirming}
+            aria-label={loading ? 'Gönderiliyor' : 'Gönder'}
+            title={loading ? 'Gönderiliyor' : 'Gönder'}
           >
-            {loading ? 'Gönderiliyor…' : 'Gönder'}
+            <span aria-hidden="true">{loading ? '···' : '↑'}</span>
           </button>
         </div>
       </div>
+
+      {quickOpen && (
+        <div className="ai-command__quick" aria-label="Hazır sorular">
+          {QUICK_COMMANDS.map((command) => (
+            <button key={command} type="button" className="quick-chip" onClick={() => {
+              setCommandInput(command)
+              setQuickOpen(false)
+              commandInputRef.current?.focus()
+            }}>{command}</button>
+          ))}
+        </div>
+      )}
 
       {loading && (
         <p className="ai-command__status" aria-live="polite">

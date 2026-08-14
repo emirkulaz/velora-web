@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { AiCommandPanel } from './components/AiCommandPanel'
-import { ChangePasswordScreen } from './components/ChangePasswordScreen'
 import { ExchangeRateTicker } from './components/ExchangeRateTicker'
 import { Icon } from './components/Icons'
 import { LanguageSelector } from './components/LanguageSelector'
@@ -30,7 +29,7 @@ interface CurrentUser {
   name: string
   email: string
   role: AppUserRole
-  mustChangePassword?: boolean
+  preferredLanguage?: 'tr' | 'fr' | 'en'
   avatarUrl?: string | null
 }
 
@@ -57,7 +56,7 @@ function initials(name: string) {
 }
 
 function App() {
-  const { t } = useI18n()
+  const { t, setLanguage } = useI18n()
   const [activeMenu, setActiveMenu] = useState<MenuId>('overview')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
@@ -86,7 +85,6 @@ function App() {
   const [companyPresentation, setCompanyPresentation] = useState<CompanyPresentation | null>(
     readLastCompanyPresentation,
   )
-  const [mustChangePassword, setMustChangePassword] = useState(false)
 
   const closeSidebar = () => setSidebarOpen(false)
 
@@ -118,7 +116,7 @@ function App() {
       .then((user) => {
         if (cancelled) return
         setCurrentUser(user)
-        setMustChangePassword(Boolean(user.mustChangePassword))
+        if (user.preferredLanguage) setLanguage(user.preferredLanguage)
         setActiveMenu(preferredMenu(user.role))
       })
       .catch(() => {
@@ -126,7 +124,6 @@ function App() {
         clearSession()
         setCompanyPresentation(null)
         setIsAuthenticated(false)
-        setMustChangePassword(false)
         setCurrentUser(null)
       })
       .finally(() => {
@@ -151,7 +148,6 @@ function App() {
       clearSession()
       setCompanyPresentation(null)
       setIsAuthenticated(false)
-      setMustChangePassword(false)
       setCurrentUser(null)
       setAuthReady(true)
       closeHeaderMenus()
@@ -167,7 +163,6 @@ function App() {
     setCompanyPresentation(null)
     closeHeaderMenus()
     setIsAuthenticated(false)
-    setMustChangePassword(false)
     setCurrentUser(null)
     setAuthReady(true)
   }
@@ -219,24 +214,10 @@ function App() {
       <div className="app" dir={uiDir}>
         <LoginScreen
           rememberedCompany={companyPresentation}
-          onAuthenticated={(company, options) => {
+          onAuthenticated={(company) => {
             setCompanyPresentation(company)
-            setMustChangePassword(Boolean(options?.mustChangePassword))
             setAuthReady(false)
             setIsAuthenticated(true)
-          }}
-        />
-      </div>
-    )
-  }
-
-  if (mustChangePassword) {
-    return (
-      <div className="app" dir={uiDir}>
-        <ChangePasswordScreen
-          onChanged={() => {
-            setMustChangePassword(false)
-            apiGet<CurrentUser>('/users/me').then(setCurrentUser).catch(() => undefined)
           }}
         />
       </div>
@@ -436,7 +417,7 @@ function App() {
 
         <main className="content">
           {activeMenu === 'overview' && <ExchangeRateTicker />}
-          <AiCommandPanel />
+          <AiCommandPanel userName={currentUser?.name} />
           {activeMenu === 'dailyWork' && (
             <DailyWorkActions onNavigate={setActiveMenu} />
           )}

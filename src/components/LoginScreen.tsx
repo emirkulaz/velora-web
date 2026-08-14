@@ -17,12 +17,12 @@ import { VeloraLogo } from './VeloraLogo'
 import './LoginScreen.css'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? '/api'
+const REMEMBERED_LOGIN_KEY = 'velora.rememberedLogin'
 
 interface LoginScreenProps {
   rememberedCompany: CompanyPresentation | null
   onAuthenticated: (
     company: CompanyPresentation | null,
-    options?: { mustChangePassword?: boolean },
   ) => void
 }
 
@@ -31,11 +31,13 @@ export function LoginScreen({
   onAuthenticated,
 }: LoginScreenProps) {
   const { t } = useI18n()
-  const [login, setLogin] = useState('')
+  const rememberedLogin = localStorage.getItem(REMEMBERED_LOGIN_KEY) ?? ''
+  const [login, setLogin] = useState(rememberedLogin)
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [rememberMe, setRememberMe] = useState(true)
+  const [rememberUsername, setRememberUsername] = useState(rememberedLogin.length > 0)
   const rememberedTrikomex = isRememberedTrikomex(rememberedCompany)
   const showQuickLogin = isQuickLoginEnabled()
   const quickAccounts = showQuickLogin ? getQuickLoginAccounts() : []
@@ -60,14 +62,18 @@ export function LoginScreen({
         throw new Error('Giriş yapılamadı.')
       }
 
-      const { accessToken, mustChangePassword } = (await response.json()) as {
+      const { accessToken } = (await response.json()) as {
         accessToken: string
-        mustChangePassword?: boolean
       }
       const tokenStorage = rememberMe ? localStorage : sessionStorage
       const otherStorage = rememberMe ? sessionStorage : localStorage
       tokenStorage.setItem('velora.accessToken', accessToken)
       otherStorage.removeItem('velora.accessToken')
+      if (rememberUsername) {
+        localStorage.setItem(REMEMBERED_LOGIN_KEY, identifier)
+      } else {
+        localStorage.removeItem(REMEMBERED_LOGIN_KEY)
+      }
       if (!rememberMe) clearLastCompanyPresentation()
 
       let company: CompanyPresentation | null = null
@@ -85,7 +91,7 @@ export function LoginScreen({
         // Preserve the successful session when the optional presentation lookup fails.
       }
 
-      onAuthenticated(company, { mustChangePassword: Boolean(mustChangePassword) })
+      onAuthenticated(company)
     } catch {
       setError(t('login.error'))
     } finally {
@@ -160,6 +166,14 @@ export function LoginScreen({
               onChange={(event) => setRememberMe(event.target.checked)}
             />
             <span>{t('login.remember')}</span>
+          </label>
+          <label className="login-form__remember">
+            <input
+              type="checkbox"
+              checked={rememberUsername}
+              onChange={(event) => setRememberUsername(event.target.checked)}
+            />
+            <span>{t('login.rememberUsername')}</span>
           </label>
 
           {error && <p className="login-form__error" role="alert">{error}</p>}

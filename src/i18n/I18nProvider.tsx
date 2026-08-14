@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from 'react'
 import { applyDocumentDirection } from './documentDirection'
+import { apiPatch } from '../data/api'
 
 export type UiLanguage = 'tr' | 'fr' | 'en'
 
@@ -39,6 +40,18 @@ const translations: Record<UiLanguage, Record<string, string>> = {
     'nav.users': 'Çalışanlar',
     'nav.usersTitle': 'Çalışanlar, vardiya ve izin',
     'nav.userManagement': 'Kullanıcı Yönetimi',
+    'users.active': 'Aktif',
+    'users.inactive': 'Pasif',
+    'users.edit': 'Düzenle',
+    'users.setPassword': 'Parola belirle',
+    'users.password': 'Parola',
+    'users.passwordConfirm': 'Parolayı doğrula',
+    'users.passwordDescription': '{name} için kalıcı parola belirleyin. Parola güvenli biçimde saklanır ve tekrar gösterilmez.',
+    'users.passwordMismatch': 'Parola ve doğrulama alanı aynı olmalıdır.',
+    'users.passwordSaved': '{name} için kalıcı parola kaydedildi.',
+    'users.passwordSaveError': 'Parola kaydedilemedi.',
+    'users.passwordSaving': 'Güvenli biçimde kaydediliyor…',
+    'users.passwordSave': 'Parolayı kaydet',
     'overview.shortcuts': 'Hızlı Erişim',
     'overview.shortcutsHint': 'Operasyon ekranına git',
     'overview.case.dailyWork': 'Bekleyen işler ve hızlı aksiyonlar',
@@ -69,7 +82,8 @@ const translations: Record<UiLanguage, Record<string, string>> = {
     'login.description': 'Operasyonlarınızı VEXOR ile güvenle yönetin.',
     'login.email': 'E-posta',
     'login.password': 'Şifre',
-    'login.remember': 'Beni hatırla',
+    'login.remember': 'Oturumu açık tut',
+    'login.rememberUsername': 'Kullanıcı adımı hatırla',
     'login.submit': 'Giriş Yap',
     'login.submitting': 'Giriş yapılıyor…',
     'login.error': 'Giriş bilgileri hatalı. Lütfen tekrar deneyin.',
@@ -85,7 +99,7 @@ const translations: Record<UiLanguage, Record<string, string>> = {
     'startup.description': 'TRIKOMEX operasyon verileri güvenle yükleniyor',
     'role.ADMIN': 'Yönetici',
     'role.OWNER': 'Şirket Sahibi',
-    'role.MEMBER': 'Çalışan',
+    'role.MEMBER': 'Operasyon kullanıcısı',
     'role.VIEWER': 'Görüntüleyici',
     'role.ACCOUNTING_OPERATOR': 'Muhasebe Operatörü',
     'role.ACCOUNTING_OPERATIONS': 'Muhasebe & Operasyon',
@@ -110,6 +124,18 @@ const translations: Record<UiLanguage, Record<string, string>> = {
     'nav.users': 'Équipe',
     'nav.usersTitle': 'Équipe, salaire et congé',
     'nav.userManagement': 'Gestion des utilisateurs',
+    'users.active': 'Actif',
+    'users.inactive': 'Inactif',
+    'users.edit': 'Modifier',
+    'users.setPassword': 'Définir le mot de passe',
+    'users.password': 'Mot de passe',
+    'users.passwordConfirm': 'Confirmer le mot de passe',
+    'users.passwordDescription': 'Définissez un mot de passe permanent pour {name}. Il sera stocké de façon sécurisée et ne sera plus affiché.',
+    'users.passwordMismatch': 'Le mot de passe et sa confirmation doivent être identiques.',
+    'users.passwordSaved': 'Le mot de passe permanent de {name} a été enregistré.',
+    'users.passwordSaveError': 'Impossible d’enregistrer le mot de passe.',
+    'users.passwordSaving': 'Enregistrement sécurisé…',
+    'users.passwordSave': 'Enregistrer le mot de passe',
     'overview.shortcuts': 'Accès rapide',
     'overview.shortcutsHint': 'Accéder aux opérations',
     'overview.case.dailyWork': 'Tâches en attente et actions rapides',
@@ -140,7 +166,8 @@ const translations: Record<UiLanguage, Record<string, string>> = {
     'login.description': 'Gérez vos opérations en toute confiance avec VEXOR.',
     'login.email': 'E-mail',
     'login.password': 'Mot de passe',
-    'login.remember': 'Se souvenir de moi',
+    'login.remember': 'Garder la session ouverte',
+    'login.rememberUsername': "Mémoriser mon identifiant",
     'login.submit': 'Se connecter',
     'login.submitting': 'Connexion…',
     'login.error': 'Identifiants incorrects. Veuillez réessayer.',
@@ -156,7 +183,7 @@ const translations: Record<UiLanguage, Record<string, string>> = {
     'startup.description': 'Les données opérationnelles de TRIKOMEX sont chargées en sécurité',
     'role.ADMIN': 'Administrateur',
     'role.OWNER': 'Propriétaire',
-    'role.MEMBER': 'Employé',
+    'role.MEMBER': 'Utilisateur opérationnel',
     'role.VIEWER': 'Lecteur',
     'role.ACCOUNTING_OPERATOR': 'Opérateur comptable',
     'role.ACCOUNTING_OPERATIONS': 'Comptabilité et opérations',
@@ -181,6 +208,18 @@ const translations: Record<UiLanguage, Record<string, string>> = {
     'nav.users': 'Team',
     'nav.usersTitle': 'Team, salary and leave',
     'nav.userManagement': 'User management',
+    'users.active': 'Active',
+    'users.inactive': 'Inactive',
+    'users.edit': 'Edit',
+    'users.setPassword': 'Set password',
+    'users.password': 'Password',
+    'users.passwordConfirm': 'Confirm password',
+    'users.passwordDescription': 'Set a permanent password for {name}. It is stored securely and will not be displayed again.',
+    'users.passwordMismatch': 'Password and confirmation must match.',
+    'users.passwordSaved': 'The permanent password for {name} was saved.',
+    'users.passwordSaveError': 'The password could not be saved.',
+    'users.passwordSaving': 'Saving securely…',
+    'users.passwordSave': 'Save password',
     'overview.shortcuts': 'Quick access',
     'overview.shortcutsHint': 'Open an operations screen',
     'overview.case.dailyWork': 'Pending work and quick actions',
@@ -211,7 +250,8 @@ const translations: Record<UiLanguage, Record<string, string>> = {
     'login.description': 'Manage your operations confidently with VEXOR.',
     'login.email': 'Email',
     'login.password': 'Password',
-    'login.remember': 'Remember me',
+    'login.remember': 'Keep me signed in',
+    'login.rememberUsername': 'Remember my username',
     'login.submit': 'Sign in',
     'login.submitting': 'Signing in…',
     'login.error': 'Invalid sign-in details. Please try again.',
@@ -227,7 +267,7 @@ const translations: Record<UiLanguage, Record<string, string>> = {
     'startup.description': 'TRIKOMEX operational data is loading securely',
     'role.ADMIN': 'Administrator',
     'role.OWNER': 'Company owner',
-    'role.MEMBER': 'Employee',
+    'role.MEMBER': 'Operations user',
     'role.VIEWER': 'Viewer',
     'role.ACCOUNTING_OPERATOR': 'Accounting operator',
     'role.ACCOUNTING_OPERATIONS': 'Accounting and operations',
@@ -263,6 +303,14 @@ export function I18nProvider({ children }: { children: ReactNode }) {
         localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage)
         applyDocumentDirection(nextLanguage)
         setLanguageState(nextLanguage)
+        if (
+          localStorage.getItem('velora.accessToken') ||
+          sessionStorage.getItem('velora.accessToken')
+        ) {
+          void apiPatch('/users/me', { preferredLanguage: nextLanguage }).catch(
+            () => undefined,
+          )
+        }
       },
       t: (key, params) => {
         const template = translations[language][key] ?? translations.tr[key] ?? key
