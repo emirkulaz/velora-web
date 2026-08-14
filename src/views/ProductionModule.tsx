@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { Modal } from '../components/Modal'
 import { ModuleSummary } from '../components/ModuleSummary'
@@ -8,7 +8,7 @@ import { SuccessToast } from '../components/Toast'
 import { ApiError, apiGet, apiPatch, apiPost } from '../data/api'
 import type { CompanyPresentation } from '../data/companyBranding'
 import { algiersYmd } from '../data/dates'
-import { materialShortLabel } from '../data/industryLabels'
+import { useI18n } from '../i18n/I18nProvider'
 import { BomRecipesTab } from './BomRecipesTab'
 
 type ProductOption = {
@@ -61,27 +61,10 @@ type ProductionOrder = {
   } | null
 }
 
-const STATUS_LABELS: Record<ProductionOrder['status'], string> = {
-  PLANNED: 'Planlandı',
-  IN_PROGRESS: 'Üretimde',
-  COMPLETED: 'Tamamlandı',
-  CANCELLED: 'İptal',
-}
-
 const OPEN_CREATE_FLAG = 'velora.production.openCreate'
 
 function todayYmd() {
   return algiersYmd()
-}
-
-function unitLabel(unit: ProductionOrder['unit']) {
-  if (unit === 'METER') return 'm'
-  if (unit === 'PIECE') return 'adet'
-  return 'kg'
-}
-
-export function markOpenProductionCreate(): void {
-  sessionStorage.setItem(OPEN_CREATE_FLAG, '1')
 }
 
 export function ProductionModule({
@@ -91,6 +74,12 @@ export function ProductionModule({
   company?: CompanyPresentation | null
   canWrite?: boolean
 }) {
+  const { locale, t, formatCurrency, formatDate, formatNumber } = useI18n()
+  const unitText = (value: string) => {
+    const key = `requests.unit.${value}`
+    const translated = t(key)
+    return translated === key ? value : translated
+  }
   const [search, setSearch] = useState('')
   const [orders, setOrders] = useState<ProductionOrder[]>([])
   const [products, setProducts] = useState<ProductOption[]>([])
@@ -115,7 +104,7 @@ export function ProductionModule({
   const [actuals, setActuals] = useState<Record<number, string>>({})
   const [wastes, setWastes] = useState<Record<number, string>>({})
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       const [orderRows, productRows] = await Promise.all([
@@ -129,35 +118,37 @@ export function ProductionModule({
       setError(
         err instanceof ApiError
           ? err.message
-          : 'Üretim emirleri alınamadı.',
+          : t('production.loadError'),
       )
     } finally {
       setLoading(false)
     }
-  }
+  }, [t])
 
   useEffect(() => {
-    void load()
-  }, [])
+    const timeoutId = window.setTimeout(() => void load(), 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [load])
 
   useEffect(() => {
     if (!canWrite) return
     if (sessionStorage.getItem(OPEN_CREATE_FLAG) === '1') {
       sessionStorage.removeItem(OPEN_CREATE_FLAG)
-      setFormOpen(true)
+      const timeoutId = window.setTimeout(() => setFormOpen(true), 0)
+      return () => window.clearTimeout(timeoutId)
     }
   }, [canWrite])
 
   const filtered = useMemo(() => {
-    const q = search.toLocaleLowerCase('tr-TR')
+    const q = search.toLocaleLowerCase(locale)
     if (!q) return orders
     return orders.filter(
       (o) =>
-        o.orderNumber.toLocaleLowerCase('tr-TR').includes(q) ||
-        (o.productName ?? '').toLocaleLowerCase('tr-TR').includes(q) ||
-        (o.productCode ?? '').toLocaleLowerCase('tr-TR').includes(q),
+        o.orderNumber.toLocaleLowerCase(locale).includes(q) ||
+        (o.productName ?? '').toLocaleLowerCase(locale).includes(q) ||
+        (o.productCode ?? '').toLocaleLowerCase(locale).includes(q),
     )
-  }, [orders, search])
+  }, [locale, orders, search])
 
   const summary = useMemo(() => {
     const active = orders.filter(
@@ -204,12 +195,12 @@ export function ProductionModule({
       resetForm()
       await load()
       const warning = created.stockWarnings?.length
-        ? ` Uyarı: ${created.stockWarnings.join(' · ')}`
+        ? ` ${t('production.stockWarning', { warning: created.stockWarnings.join(' · ') })}`
         : ''
-      setSuccessNotice(`Yeni üretim emri kaydedildi.${warning}`)
+      setSuccessNotice(`${t('production.created')}${warning}`)
     } catch (err) {
       setFormError(
-        err instanceof ApiError ? err.message : 'Üretim emri kaydedilemedi.',
+        err instanceof ApiError ? err.message : t('production.saveError'),
       )
     } finally {
       setSaving(false)
@@ -221,7 +212,7 @@ export function ProductionModule({
     const raw = progressEdits[order.id] ?? String(order.completedQuantity)
     const completedQuantity = Number(raw)
     if (!Number.isFinite(completedQuantity) || completedQuantity < 0) {
-      setError('Geçerli bir tamamlanan miktar girin.')
+      setError(t('production.invalidCompleted'))
       return
     }
     setSaving(true)
@@ -229,9 +220,9 @@ export function ProductionModule({
     try {
       await apiPatch(`/production-orders/${order.id}`, { completedQuantity })
       await load()
-      setSuccessNotice('Üretim ilerlemesi güncellendi.')
+      setSuccessNotice(t('production.progressUpdated'))
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'İlerleme güncellenemedi.')
+      setError(err instanceof ApiError ? err.message : t('production.progressError'))
     } finally {
       setSaving(false)
     }
@@ -250,7 +241,7 @@ export function ProductionModule({
       setActuals(nextActuals)
       setWastes(nextWastes)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Üretim detayı alınamadı.')
+      setError(err instanceof ApiError ? err.message : t('production.detailError'))
     }
   }
 
@@ -278,9 +269,9 @@ export function ProductionModule({
       }
       await load()
       if (detail?.id === order.id) await openDetail(order)
-      setSuccessNotice('Üretim emri durumu güncellendi.')
+      setSuccessNotice(t('production.statusUpdated'))
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Durum güncellenemedi.')
+      setError(err instanceof ApiError ? err.message : t('production.statusError'))
     } finally {
       setSaving(false)
     }
@@ -295,14 +286,14 @@ export function ProductionModule({
           className={tab === 'orders' ? 'module-tab module-tab--active' : 'module-tab'}
           onClick={() => setTab('orders')}
         >
-          Emirler
+          {t('production.ordersTab')}
         </button>
         <button
           type="button"
           className={tab === 'boms' ? 'module-tab module-tab--active' : 'module-tab'}
           onClick={() => setTab('boms')}
         >
-          Reçeteler
+          {t('production.recipesTab')}
         </button>
       </div>
       {tab === 'boms' && <BomRecipesTab company={company} canWrite={canWrite} />}
@@ -310,12 +301,12 @@ export function ProductionModule({
       <>
       <ModuleSummary
         items={[
-          { label: 'Aktif Emir', value: loading ? '…' : String(summary.active) },
-          { label: 'Geciken', value: loading ? '…' : String(summary.delayed) },
-          { label: 'Tamamlanan', value: loading ? '…' : String(summary.completed) },
+          { label: t('production.activeOrders'), value: loading ? '…' : formatNumber(summary.active) },
+          { label: t('production.delayed'), value: loading ? '…' : formatNumber(summary.delayed) },
+          { label: t('production.completed'), value: loading ? '…' : formatNumber(summary.completed) },
           {
-            label: 'Ort. İlerleme',
-            value: loading ? '…' : String(summary.avgProgress),
+            label: t('production.averageProgress'),
+            value: loading ? '…' : formatNumber(summary.avgProgress),
             unit: '%',
           },
         ]}
@@ -323,7 +314,7 @@ export function ProductionModule({
 
       <section className="panel panel--full">
         <div className="panel__header">
-          <h2>Aktif Üretim Emirleri</h2>
+          <h2>{t('production.title')}</h2>
           {canWrite && (
             <button
               type="button"
@@ -333,16 +324,16 @@ export function ProductionModule({
                 setFormOpen(true)
               }}
             >
-              + Üretim Emri
+              + {t('production.new')}
             </button>
           )}
         </div>
         <ModuleToolbar
           reportType="production"
-          reportLabel="Üretim Raporu"
+          reportLabel={t('production.report')}
           search={search}
           onSearchChange={setSearch}
-          searchPlaceholder="Emir no veya ürün ara..."
+          searchPlaceholder={t('production.search')}
         />
         {error && (
           <p className="demo-notice" role="alert">
@@ -353,14 +344,14 @@ export function ProductionModule({
           <table className="data-table">
             <thead>
               <tr>
-                <th>Emir No</th>
-                <th>Ürün</th>
-                <th>Planlanan</th>
-                <th>Tamamlanan</th>
-                <th>İlerleme</th>
-                <th>Durum</th>
-                <th>Termin</th>
-                {canWrite && <th>İşlem</th>}
+                <th>{t('production.orderNumber')}</th>
+                <th>{t('production.product')}</th>
+                <th>{t('production.planned')}</th>
+                <th>{t('production.completedQuantity')}</th>
+                <th>{t('production.progress')}</th>
+                <th>{t('production.status')}</th>
+                <th>{t('production.dueDate')}</th>
+                {canWrite && <th>{t('production.actions')}</th>}
               </tr>
             </thead>
             <tbody>
@@ -378,8 +369,8 @@ export function ProductionModule({
                     </div>
                   </td>
                   <td>
-                    {order.plannedQuantity.toLocaleString('tr-TR')}{' '}
-                    {unitLabel(order.unit)}
+                    {formatNumber(order.plannedQuantity)}{' '}
+                    {t(`requests.unit.${order.unit}`)}
                   </td>
                   <td>
                     {canWrite &&
@@ -408,13 +399,13 @@ export function ProductionModule({
                           disabled={saving}
                           onClick={() => void handleProgressSave(order)}
                         >
-                          Kaydet
+                          {t('common.save')}
                         </button>
                       </div>
                     ) : (
                       <>
-                        {order.completedQuantity.toLocaleString('tr-TR')}{' '}
-                        {unitLabel(order.unit)}
+                        {formatNumber(order.completedQuantity)}{' '}
+                        {t(`requests.unit.${order.unit}`)}
                       </>
                     )}
                   </td>
@@ -433,14 +424,14 @@ export function ProductionModule({
                     <StatusBadge
                       status={
                         order.delayed
-                          ? 'Gecikmiş'
-                          : STATUS_LABELS[order.status]
+                          ? t('production.status.DELAYED')
+                          : t(`production.status.${order.status}`)
                       }
                     />
                   </td>
                   <td className="date-cell">
                     {order.dueDate
-                      ? order.dueDate.split('-').reverse().join('.')
+                      ? formatDate(`${order.dueDate}T12:00:00`)
                       : '—'}
                   </td>
                   {canWrite && (
@@ -455,7 +446,7 @@ export function ProductionModule({
                               void handleStatus(order, 'IN_PROGRESS')
                             }
                           >
-                            Başlat
+                            {t('production.start')}
                           </button>
                         )}
                         {(order.status === 'PLANNED' ||
@@ -468,7 +459,7 @@ export function ProductionModule({
                               setStatusTarget({ order, status: 'COMPLETED' })
                             }
                           >
-                            Tamamla
+                            {t('production.finish')}
                           </button>
                         )}
                         {(order.status === 'PLANNED' ||
@@ -481,7 +472,7 @@ export function ProductionModule({
                               setStatusTarget({ order, status: 'CANCELLED' })
                             }
                           >
-                            İptal
+                            {t('production.cancel')}
                           </button>
                         )}
                       </div>
@@ -492,7 +483,7 @@ export function ProductionModule({
               {!loading && filtered.length === 0 && (
                 <tr>
                   <td colSpan={canWrite ? 8 : 7} className="empty-cell">
-                    Henüz üretim emri yok.
+                    {t('production.empty')}
                   </td>
                 </tr>
               )}
@@ -503,7 +494,7 @@ export function ProductionModule({
 
       <Modal
         open={formOpen}
-        title="Yeni Üretim Emri"
+        title={t('production.newTitle')}
         onClose={() => {
           setFormOpen(false)
           setFormError('')
@@ -516,7 +507,7 @@ export function ProductionModule({
             </p>
           )}
           <label>
-            Ürün
+            {t('production.product')}
             <select
               required
               value={productId}
@@ -526,7 +517,7 @@ export function ProductionModule({
                 if (p) setUnit(p.unit)
               }}
             >
-              <option value="">Seçin</option>
+              <option value="">{t('production.select')}</option>
               {products.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.code} · {p.name}
@@ -535,7 +526,7 @@ export function ProductionModule({
             </select>
           </label>
           <label>
-            Planlanan miktar
+            {t('production.plannedQuantity')}
             <input
               type="number"
               min="0.001"
@@ -546,20 +537,20 @@ export function ProductionModule({
             />
           </label>
           <label>
-            Birim
+            {t('production.unit')}
             <select
               value={unit}
               onChange={(e) =>
                 setUnit(e.target.value as 'METER' | 'PIECE' | 'KILOGRAM')
               }
             >
-              <option value="METER">Metre</option>
-              <option value="PIECE">Adet</option>
-              <option value="KILOGRAM">Kilogram</option>
+              <option value="METER">{t('requests.unit.METER')}</option>
+              <option value="PIECE">{t('requests.unit.PIECE')}</option>
+              <option value="KILOGRAM">{t('requests.unit.KILOGRAM')}</option>
             </select>
           </label>
           <label>
-            Termin
+            {t('production.dueDate')}
             <input
               type="date"
               min={todayYmd()}
@@ -568,7 +559,7 @@ export function ProductionModule({
             />
           </label>
           <label>
-            Not
+            {t('production.note')}
             <textarea
               rows={2}
               value={notes}
@@ -581,14 +572,14 @@ export function ProductionModule({
               className="btn btn--ghost"
               onClick={() => setFormOpen(false)}
             >
-              Vazgeç
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               className="btn btn--primary"
               disabled={saving || !productId}
             >
-              {saving ? 'Kaydediliyor…' : 'Kaydet'}
+              {saving ? t('production.saving') : t('common.save')}
             </button>
           </div>
         </form>
@@ -598,15 +589,15 @@ export function ProductionModule({
         open={statusTarget != null}
         title={
           statusTarget?.status === 'COMPLETED'
-            ? 'Üretim emrini tamamla'
-            : 'Üretim emrini iptal et'
+            ? t('production.finishTitle')
+            : t('production.cancelTitle')
         }
         message={
           statusTarget?.status === 'COMPLETED'
-            ? 'Planlanan miktar tamamlanmış olarak kaydedilecek. Gerçek tüketim varsa detaydan girin. Devam edilsin mi?'
-            : 'İptal edilmiş üretim emri yeniden açılamaz. Devam edilsin mi?'
+            ? t('production.finishMessage')
+            : t('production.cancelMessage')
         }
-        confirmLabel={statusTarget?.status === 'COMPLETED' ? 'Tamamla' : 'İptal et'}
+        confirmLabel={statusTarget?.status === 'COMPLETED' ? t('production.finish') : t('production.cancelAction')}
         onCancel={() => setStatusTarget(null)}
         onConfirm={() => {
           if (statusTarget) {
@@ -618,24 +609,24 @@ export function ProductionModule({
 
       <Modal
         open={detail != null}
-        title={detail ? `${detail.orderNumber} · Reçete / Malzeme İhtiyacı` : 'Detay'}
+        title={detail ? t('production.detailTitle', { number: detail.orderNumber }) : t('production.detail')}
         onClose={() => setDetail(null)}
       >
         {detail && (
           <div>
             {(detail.materials ?? []).length === 0 ? (
-              <p className="demo-notice">Bu emir için reçete snapshot’ı yok.</p>
+              <p className="demo-notice">{t('production.noSnapshot')}</p>
             ) : (
               <div className="table-wrap">
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>{materialShortLabel(company)}</th>
-                      <th>Gerekli</th>
-                      <th>Stokta</th>
-                      <th>Eksik</th>
-                      <th>Gerçek</th>
-                      <th>Durum</th>
+                      <th>{t('production.material')}</th>
+                      <th>{t('production.required')}</th>
+                      <th>{t('production.inStock')}</th>
+                      <th>{t('production.shortage')}</th>
+                      <th>{t('production.actual')}</th>
+                      <th>{t('production.status')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -643,22 +634,21 @@ export function ProductionModule({
                       <tr key={line.materialProductId}>
                         <td>{line.materialName}</td>
                         <td>
-                          {line.plannedQuantity.toLocaleString('fr-DZ')} {line.unit}
+                          {formatNumber(line.plannedQuantity)} {unitText(line.unit)}
                         </td>
                         <td>
-                          {line.available.toLocaleString('fr-DZ')} {line.unit}
+                          {formatNumber(line.available)} {unitText(line.unit)}
                         </td>
                         <td>
-                          {line.shortage.toLocaleString('fr-DZ')} {line.unit}
+                          {formatNumber(line.shortage)} {unitText(line.unit)}
                         </td>
                         <td>
                           {detail.status === 'COMPLETED' ? (
                             <>
-                              {(line.actualQuantity ?? 0).toLocaleString('fr-DZ')} {line.unit}
+                              {formatNumber(line.actualQuantity ?? 0)} {unitText(line.unit)}
                               {line.variance != null && (
                                 <div className="panel__meta">
-                                  Sapma: {line.variance > 0 ? '+' : ''}
-                                  {line.variance.toLocaleString('fr-DZ')} {line.unit}
+                                  {t('production.variance', { value: `${line.variance > 0 ? '+' : ''}${formatNumber(line.variance)} ${unitText(line.unit)}` })}
                                 </div>
                               )}
                             </>
@@ -678,7 +668,7 @@ export function ProductionModule({
                             />
                           )}
                         </td>
-                        <td>{line.status}</td>
+                        <td>{line.sufficient ? t('production.materialSufficient') : t('production.materialInsufficient')}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -686,18 +676,22 @@ export function ProductionModule({
               </div>
             )}
             <p className="panel__meta" style={{ marginTop: 12 }}>
-              Planlanan malzeme maliyeti:{' '}
+              {t('production.plannedMaterialCost')}:{' '}
               {detail.missingCost || detail.plannedMaterialCost == null
-                ? 'maliyet verisi eksik'
-                : `${detail.plannedMaterialCost.toLocaleString('fr-DZ')} DZD`}
+                ? t('production.missingCost')
+                : formatCurrency(detail.plannedMaterialCost)}
               {detail.actualMaterialCost != null &&
-                ` · Gerçek: ${detail.actualMaterialCost.toLocaleString('fr-DZ')} DZD`}
+                ` · ${t('production.actualCost', { value: formatCurrency(detail.actualMaterialCost) })}`}
             </p>
             {detail.extraCost && (
               <p className="panel__meta">
-                CostCalculation: işçilik {detail.extraCost.laborCost} · aksesuar{' '}
-                {detail.extraCost.accessoryCost} · paket {detail.extraCost.packagingCost} · elektrik{' '}
-                {detail.extraCost.electricityCost} · diğer {detail.extraCost.otherCost} DZD
+                {t('production.extraCosts', {
+                  labor: formatCurrency(detail.extraCost.laborCost),
+                  accessory: formatCurrency(detail.extraCost.accessoryCost),
+                  packaging: formatCurrency(detail.extraCost.packagingCost),
+                  electricity: formatCurrency(detail.extraCost.electricityCost),
+                  other: formatCurrency(detail.extraCost.otherCost),
+                })}
               </p>
             )}
             {canWrite && detail.status !== 'COMPLETED' && detail.status !== 'CANCELLED' && (
@@ -708,7 +702,7 @@ export function ProductionModule({
                   disabled={saving}
                   onClick={() => setStatusTarget({ order: detail, status: 'COMPLETED' })}
                 >
-                  Gerçek tüketim ile tamamla
+                  {t('production.finishWithActuals')}
                 </button>
               </div>
             )}
