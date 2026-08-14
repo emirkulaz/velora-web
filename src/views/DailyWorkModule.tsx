@@ -9,7 +9,7 @@ import {
   markOpenFinanceCollection,
 } from './FinanceModule'
 import { markOpenInventoryMovement } from './InventoryModule'
-import { markOpenOrderCreate } from './OrdersModule'
+import { markOpenOrderCreate } from './orderActions'
 
 type PendingDelivery = {
   id: number

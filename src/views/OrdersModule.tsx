@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { Modal } from '../components/Modal'
 import { ModuleSummary } from '../components/ModuleSummary'
@@ -7,8 +7,8 @@ import { StatusBadge } from '../components/StatusBadge'
 import { SuccessToast } from '../components/Toast'
 import { ApiError, apiGet, apiPost, apiRequest } from '../data/api'
 import { algiersDatetimeLocal, algiersYmd } from '../data/dates'
-
-const OPEN_CREATE_FLAG = 'velora.orders.openCreate'
+import { useI18n } from '../i18n/I18nProvider'
+import { OPEN_ORDER_CREATE_FLAG } from './orderActions'
 
 type CustomerOption = { id: number; name: string }
 type ProductOption = { id:number; code:string; name:string; unit:'METER'|'PIECE'|'KILOGRAM'; salePrice:number|null }
@@ -43,25 +43,6 @@ type SalesOrder = {
   }>
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: 'Taslak',
-  CONFIRMED: 'Onaylı',
-  IN_PRODUCTION: 'Üretimde',
-  READY: 'Hazır',
-  PARTIALLY_DELIVERED: 'Kısmi teslim',
-  DELIVERED: 'Teslim edildi',
-  CANCELLED: 'İptal',
-}
-
-function formatMoney(value: number, currency = 'DZD'): string {
-  const fixed = Number(value.toFixed(2))
-  const [intRaw, dec] = Math.abs(fixed).toFixed(2).split('.')
-  const withDots = intRaw.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
-  const sign = fixed < 0 ? '-' : ''
-  if (dec === '00') return `${sign}${withDots} ${currency}`
-  return `${sign}${withDots},${dec} ${currency}`
-}
-
 function todayYmd(): string {
   return algiersYmd()
 }
@@ -79,6 +60,7 @@ function toIsoDateTime(value: string): string {
 }
 
 export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
+  const { locale, t, formatCurrency, formatDate, formatNumber } = useI18n()
   const [orders, setOrders] = useState<SalesOrder[]>([])
   const [customers, setCustomers] = useState<CustomerOption[]>([])
   const [products, setProducts] = useState<ProductOption[]>([])
@@ -127,7 +109,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
     return Math.round((liveGross - adv) * 100) / 100
   }, [liveGross, advanceAmount])
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
@@ -143,22 +125,20 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
       setError(
         err instanceof ApiError
           ? err.message
-          : 'Siparişler yüklenemedi. Yetki veya API bağlantısını kontrol edin.',
+          : t('orders.loadError'),
       )
     } finally {
       setLoading(false)
     }
-  }
+  }, [t])
 
   useEffect(() => {
-    void load()
-  }, [])
+    const timeoutId = window.setTimeout(() => void load(), 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [load])
 
   useEffect(() => {
-    if (selectedId == null) {
-      setSelected(null)
-      return
-    }
+    if (selectedId == null) return
     let cancelled = false
     ;(async () => {
       try {
@@ -167,7 +147,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
       } catch (err) {
         if (!cancelled) {
           setError(
-            err instanceof ApiError ? err.message : 'Sipariş detayı alınamadı.',
+            err instanceof ApiError ? err.message : t('orders.detailError'),
           )
         }
       }
@@ -175,15 +155,15 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
     return () => {
       cancelled = true
     }
-  }, [selectedId])
+  }, [selectedId, t])
 
   const filtered = orders.filter((order) => {
-    const q = query.trim().toLocaleLowerCase('tr-TR')
+    const q = query.trim().toLocaleLowerCase(locale)
     if (!q) return true
     return (
-      order.orderNumber.toLocaleLowerCase('tr-TR').includes(q) ||
-      (order.customerName ?? '').toLocaleLowerCase('tr-TR').includes(q) ||
-      order.status.toLocaleLowerCase('tr-TR').includes(q)
+      order.orderNumber.toLocaleLowerCase(locale).includes(q) ||
+      (order.customerName ?? '').toLocaleLowerCase(locale).includes(q) ||
+      t(`orders.status.${order.status}`).toLocaleLowerCase(locale).includes(q)
     )
   })
 
@@ -214,16 +194,21 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
 
   useEffect(() => {
     if (!canWrite) return
+    let shouldOpen = false
     try {
-      if (sessionStorage.getItem(OPEN_CREATE_FLAG) === '1') {
-        sessionStorage.removeItem(OPEN_CREATE_FLAG)
-        resetForm()
-        setFormOpen(true)
+      if (sessionStorage.getItem(OPEN_ORDER_CREATE_FLAG) === '1') {
+        sessionStorage.removeItem(OPEN_ORDER_CREATE_FLAG)
+        shouldOpen = true
       }
     } catch {
       // ignore
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only openCreate flag
+    if (!shouldOpen) return
+    const timeoutId = window.setTimeout(() => {
+      resetForm()
+      setFormOpen(true)
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
   }, [canWrite])
 
   const reloadSelectedAndList = async (id: number) => {
@@ -237,11 +222,11 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
     event.preventDefault()
     if (!canWrite || saving) return
     if (liveRemaining < 0) {
-      setFormError('Kalan tutar negatif olamaz.')
+      setFormError(t('orders.negativeRemaining'))
       return
     }
     if (status === 'DRAFT' && Number(advanceAmount) > 0) {
-      setFormError('Avanslı sipariş için durumu Onaylı seçin.')
+      setFormError(t('orders.advanceRequiresConfirmation'))
       return
     }
     setSaving(true)
@@ -270,9 +255,9 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
       resetForm()
       await load()
       setSelectedId(created.id)
-      setSuccessNotice('Yeni sipariş kaydedildi.')
+      setSuccessNotice(t('orders.created'))
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Sipariş kaydedilemedi.')
+      setFormError(err instanceof ApiError ? err.message : t('orders.saveError'))
     } finally {
       setSaving(false)
     }
@@ -294,9 +279,9 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
       setSelected(updated)
       setConfirmConfirm(false)
       await load()
-      setSuccessNotice('Sipariş onaylandı.')
+      setSuccessNotice(t('orders.confirmed'))
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Durum güncellenemedi.')
+      setError(err instanceof ApiError ? err.message : t('orders.statusError'))
     } finally {
       setSaving(false)
     }
@@ -323,9 +308,9 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
       setDeliveryNotes('')
       setDeliveryDate(todayYmd())
       await reloadSelectedAndList(selected.id)
-      setSuccessNotice('Teslimat kaydedildi.')
+      setSuccessNotice(t('orders.deliverySaved'))
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Teslimat kaydedilemedi.')
+      setError(err instanceof ApiError ? err.message : t('orders.deliveryError'))
     } finally {
       setSaving(false)
     }
@@ -347,9 +332,9 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
       setCollectionDesc('')
       setCollectionAt(nowDatetimeLocal())
       await reloadSelectedAndList(selected.id)
-      setSuccessNotice('Tahsilat kaydedildi.')
+      setSuccessNotice(t('orders.collectionSaved'))
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Tahsilat kaydedilemedi.')
+      setError(err instanceof ApiError ? err.message : t('orders.collectionError'))
     } finally {
       setSaving(false)
     }
@@ -371,9 +356,9 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
       setExtraAdvanceDesc('')
       setExtraAdvanceAt(nowDatetimeLocal())
       await reloadSelectedAndList(selected.id)
-      setSuccessNotice('Avans kaydedildi.')
+      setSuccessNotice(t('orders.advanceSaved'))
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Avans kaydedilemedi.')
+      setError(err instanceof ApiError ? err.message : t('orders.advanceError'))
     } finally {
       setSaving(false)
     }
@@ -384,12 +369,12 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
       <SuccessToast message={successNotice} onDismiss={() => setSuccessNotice('')} />
       <ModuleSummary
         items={[
-          { label: 'Toplam Sipariş', value: String(summary.total) },
-          { label: 'Üretimde', value: String(summary.inProduction) },
-          { label: 'Onay Bekliyor', value: String(summary.draft) },
+          { label: t('orders.totalOrders'), value: formatNumber(summary.total) },
+          { label: t('orders.status.IN_PRODUCTION'), value: formatNumber(summary.inProduction) },
+          { label: t('orders.pendingApproval'), value: formatNumber(summary.draft) },
           {
-            label: 'Bu Ay Tutar',
-            value: formatMoney(summary.monthAmount).replace(' DZD', ''),
+            label: t('orders.monthAmount'),
+            value: formatNumber(summary.monthAmount, { maximumFractionDigits: 2 }),
             unit: 'DZD',
           },
         ]}
@@ -397,7 +382,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
 
       <section className="panel panel--full">
         <div className="panel__header">
-          <h2>Siparişler</h2>
+          <h2>{t('orders.title')}</h2>
           {canWrite && (
             <button
               type="button"
@@ -407,17 +392,17 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                 setFormOpen(true)
               }}
             >
-              + Yeni Sipariş
+              + {t('orders.new')}
             </button>
           )}
         </div>
 
         <ModuleToolbar
           reportType="orders"
-          reportLabel="Sipariş Raporu"
+          reportLabel={t('orders.report')}
           search={query}
           onSearchChange={setQuery}
-          searchPlaceholder="Sipariş no, müşteri veya durum ara…"
+          searchPlaceholder={t('orders.search')}
         />
 
         {error && (
@@ -427,14 +412,14 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
         )}
 
         {loading ? (
-          <p className="empty-state">Yükleniyor…</p>
+          <p className="empty-state">{t('common.loading')}</p>
         ) : filtered.length === 0 ? (
           <div className="empty-state" style={{ textAlign: 'center', padding: '48px 24px' }}>
             <p style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
-              Sipariş kaydı bulunamadı
+              {t('orders.empty')}
             </p>
             <p style={{ marginBottom: 20 }}>
-              İlk gerçek siparişinizi kaydedin. Demo sipariş üretilmez.
+              {t('orders.emptyHint')}
             </p>
             {canWrite && (
               <button
@@ -445,7 +430,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                   setFormOpen(true)
                 }}
               >
-                Yeni sipariş ekle
+                {t('orders.add')}
               </button>
             )}
           </div>
@@ -454,12 +439,12 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Sipariş</th>
-                  <th>Müşteri</th>
-                  <th>Tarih</th>
-                  <th>Durum</th>
-                  <th>Tutar</th>
-                  <th>Kalan</th>
+                  <th>{t('orders.order')}</th>
+                  <th>{t('orders.customer')}</th>
+                  <th>{t('orders.date')}</th>
+                  <th>{t('orders.status')}</th>
+                  <th>{t('orders.amount')}</th>
+                  <th>{t('orders.remaining')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -474,14 +459,14 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                   >
                     <td>{order.orderNumber}</td>
                     <td>{order.customerName ?? '—'}</td>
-                    <td>{order.orderDate.split('-').reverse().join('.')}</td>
+                    <td>{formatDate(`${order.orderDate}T12:00:00`)}</td>
                     <td>
                       <StatusBadge
-                        status={STATUS_LABELS[order.status] ?? order.status}
+                        status={t(`orders.status.${order.status}`)}
                       />
                     </td>
-                    <td>{formatMoney(order.grossTotal, order.currency)}</td>
-                    <td>{formatMoney(order.remainingAmount, order.currency)}</td>
+                    <td>{formatCurrency(order.grossTotal, order.currency)}</td>
+                    <td>{formatCurrency(order.remainingAmount, order.currency)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -494,55 +479,58 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
         <section className="panel panel--full" style={{ marginTop: 16 }}>
           <div className="panel__header">
             <h2>
-              Sipariş detayı · {selected.orderNumber}
+              {t('orders.detail', { number: selected.orderNumber })}
             </h2>
             <button
               type="button"
               className="btn btn--ghost"
-              onClick={() => setSelectedId(null)}
+              onClick={() => {
+                setSelected(null)
+                setSelectedId(null)
+              }}
             >
-              Kapat
+              {t('common.close')}
             </button>
           </div>
           <div className="demo-form" style={{ display: 'grid', gap: 8 }}>
             <p>
-              <strong>Müşteri:</strong> {selected.customerName ?? selected.customerId}
+              <strong>{t('orders.customer')}:</strong> {selected.customerName ?? selected.customerId}
             </p>
-            <p><strong>Ürün:</strong> {selected.productName ?? 'Bağlı ürün yok'}</p>
+            <p><strong>{t('orders.product')}:</strong> {selected.productName ?? t('orders.noLinkedProduct')}</p>
             <p>
-              <strong>Durum:</strong>{' '}
-              {STATUS_LABELS[selected.status] ?? selected.status}
-            </p>
-            <p>
-              <strong>Miktar:</strong> {selected.quantity} {selected.unit}
+              <strong>{t('orders.status')}:</strong>{' '}
+              {t(`orders.status.${selected.status}`)}
             </p>
             <p>
-              <strong>Birim fiyat:</strong>{' '}
-              {formatMoney(selected.unitPrice, selected.currency)}
+              <strong>{t('orders.quantity')}:</strong> {formatNumber(selected.quantity)} {t(`requests.unit.${selected.unit}`)}
             </p>
             <p>
-              <strong>Toplam:</strong>{' '}
-              {formatMoney(selected.grossTotal, selected.currency)}
+              <strong>{t('orders.unitPrice')}:</strong>{' '}
+              {formatCurrency(selected.unitPrice, selected.currency)}
             </p>
             <p>
-              <strong>Avans:</strong>{' '}
-              {formatMoney(selected.advanceAmount, selected.currency)}
+              <strong>{t('orders.total')}:</strong>{' '}
+              {formatCurrency(selected.grossTotal, selected.currency)}
             </p>
             <p>
-              <strong>Tahsilat:</strong>{' '}
-              {formatMoney(selected.collectedAmount, selected.currency)}
+              <strong>{t('orders.advance')}:</strong>{' '}
+              {formatCurrency(selected.advanceAmount, selected.currency)}
             </p>
             <p>
-              <strong>Kalan:</strong>{' '}
-              {formatMoney(selected.remainingAmount, selected.currency)}
+              <strong>{t('orders.collection')}:</strong>{' '}
+              {formatCurrency(selected.collectedAmount, selected.currency)}
             </p>
             <p>
-              <strong>Teslim edilen:</strong> {selected.deliveredQuantity} /{' '}
-              {selected.quantity}
+              <strong>{t('orders.remaining')}:</strong>{' '}
+              {formatCurrency(selected.remainingAmount, selected.currency)}
+            </p>
+            <p>
+              <strong>{t('orders.delivered')}:</strong> {formatNumber(selected.deliveredQuantity)} /{' '}
+              {formatNumber(selected.quantity)}
             </p>
             {selected.notes && (
               <p>
-                <strong>Not:</strong> {selected.notes}
+                <strong>{t('orders.note')}:</strong> {selected.notes}
               </p>
             )}
             {canWrite && selected.status === 'DRAFT' && (
@@ -553,7 +541,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                   onClick={() => setConfirmConfirm(true)}
                   disabled={saving}
                 >
-                  Siparişi onayla
+                  {t('orders.confirm')}
                 </button>
               </div>
             )}
@@ -573,9 +561,9 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                   onSubmit={(e) => void handleDelivery(e)}
                   style={{ display: 'grid', gap: 8 }}
                 >
-                  <h3 style={{ margin: 0, fontSize: 15 }}>Teslimat ekle</h3>
+                  <h3 style={{ margin: 0, fontSize: 15 }}>{t('orders.addDelivery')}</h3>
                   <label>
-                    Teslim tarihi
+                    {t('orders.deliveryDate')}
                     <input
                       type="date"
                       required
@@ -584,7 +572,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                     />
                   </label>
                   <label>
-                    Miktar
+                    {t('orders.quantity')}
                     <input
                       type="number"
                       min="0.001"
@@ -595,7 +583,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                     />
                   </label>
                   <label>
-                    Not
+                    {t('orders.note')}
                     <input
                       type="text"
                       value={deliveryNotes}
@@ -608,7 +596,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                       className="btn btn--primary"
                       disabled={saving || !deliveryQty}
                     >
-                      {saving ? 'Kaydediliyor…' : 'Teslimat kaydet'}
+                      {saving ? t('orders.saving') : t('orders.saveDelivery')}
                     </button>
                   </div>
                 </form>
@@ -618,9 +606,9 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                   onSubmit={(e) => void handleCollection(e)}
                   style={{ display: 'grid', gap: 8 }}
                 >
-                  <h3 style={{ margin: 0, fontSize: 15 }}>Tahsilat</h3>
+                  <h3 style={{ margin: 0, fontSize: 15 }}>{t('orders.collection')}</h3>
                   <label>
-                    Tutar (DZD)
+                    {t('orders.amount')} (DZD)
                     <input
                       type="number"
                       min="0.01"
@@ -631,7 +619,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                     />
                   </label>
                   <label>
-                    İşlem zamanı
+                    {t('orders.transactionTime')}
                     <input
                       type="datetime-local"
                       required
@@ -640,7 +628,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                     />
                   </label>
                   <label>
-                    Açıklama
+                    {t('orders.description')}
                     <input
                       type="text"
                       value={collectionDesc}
@@ -653,7 +641,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                       className="btn btn--primary"
                       disabled={saving || !collectionAmount}
                     >
-                      {saving ? 'Kaydediliyor…' : 'Tahsilat kaydet'}
+                      {saving ? t('orders.saving') : t('orders.saveCollection')}
                     </button>
                   </div>
                 </form>
@@ -663,9 +651,9 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                   onSubmit={(e) => void handleExtraAdvance(e)}
                   style={{ display: 'grid', gap: 8 }}
                 >
-                  <h3 style={{ margin: 0, fontSize: 15 }}>Avans</h3>
+                  <h3 style={{ margin: 0, fontSize: 15 }}>{t('orders.advance')}</h3>
                   <label>
-                    Tutar (DZD)
+                    {t('orders.amount')} (DZD)
                     <input
                       type="number"
                       min="0.01"
@@ -676,7 +664,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                     />
                   </label>
                   <label>
-                    İşlem zamanı
+                    {t('orders.transactionTime')}
                     <input
                       type="datetime-local"
                       required
@@ -685,7 +673,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                     />
                   </label>
                   <label>
-                    Açıklama
+                    {t('orders.description')}
                     <input
                       type="text"
                       value={extraAdvanceDesc}
@@ -698,7 +686,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                       className="btn btn--ghost"
                       disabled={saving || !extraAdvanceAmount}
                     >
-                      {saving ? 'Kaydediliyor…' : 'Avans kaydet'}
+                      {saving ? t('orders.saving') : t('orders.saveAdvance')}
                     </button>
                   </div>
                 </form>
@@ -710,9 +698,9 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>Teslimat</th>
-                      <th>Miktar</th>
-                      <th>Not</th>
+                      <th>{t('orders.delivery')}</th>
+                      <th>{t('orders.quantity')}</th>
+                      <th>{t('orders.note')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -720,10 +708,10 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                       <tr key={d.id}>
                         <td>
                           {d.deliveryDate
-                            ? d.deliveryDate.split('-').reverse().join('.')
+                            ? formatDate(`${d.deliveryDate}T12:00:00`)
                             : '—'}
                         </td>
-                        <td>{d.quantity}</td>
+                        <td>{formatNumber(d.quantity)}</td>
                         <td>{d.notes ?? '—'}</td>
                       </tr>
                     ))}
@@ -737,7 +725,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
 
       <Modal
         open={formOpen}
-        title="Yeni Sipariş"
+        title={t('orders.newTitle')}
         onClose={() => {
           setFormOpen(false)
           setFormError('')
@@ -750,13 +738,13 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
             </p>
           )}
           <label>
-            Müşteri
+            {t('orders.customer')}
             <select
               required
               value={customerId}
               onChange={(e) => setCustomerId(e.target.value)}
             >
-              <option value="">Seçin</option>
+              <option value="">{t('orders.select')}</option>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -765,14 +753,14 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
             </select>
           </label>
           <label>
-            Ürün
+            {t('orders.product')}
             <select value={productId} onChange={(e) => { const id=e.target.value; setProductId(id); const p=products.find(x=>x.id===Number(id)); if(p){setUnit(p.unit); if(p.salePrice!=null)setUnitPrice(String(p.salePrice))} }}>
-              <option value="">Eski tip / ürünsüz sipariş</option>
+              <option value="">{t('orders.legacyProduct')}</option>
               {products.map(p=><option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
             </select>
           </label>
           <label>
-            Sipariş tarihi
+            {t('orders.orderDate')}
             <input
               type="date"
               required
@@ -781,7 +769,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            Planlanan teslim
+            {t('orders.expectedDelivery')}
             <input
               type="date"
               value={expectedDeliveryDate}
@@ -789,7 +777,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            Miktar
+            {t('orders.quantity')}
             <input
               type="number"
               min="0.001"
@@ -800,20 +788,20 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            Birim
+            {t('orders.unit')}
             <select
               value={unit}
               onChange={(e) =>
                 setUnit(e.target.value as 'METER' | 'PIECE' | 'KILOGRAM')
               }
             >
-              <option value="METER">Metre</option>
-              <option value="PIECE">Adet</option>
-              <option value="KILOGRAM">Kilogram</option>
+              <option value="METER">{t('requests.unit.METER')}</option>
+              <option value="PIECE">{t('requests.unit.PIECE')}</option>
+              <option value="KILOGRAM">{t('requests.unit.KILOGRAM')}</option>
             </select>
           </label>
           <label>
-            Birim fiyat (DZD)
+            {t('orders.unitPriceDzd')}
             <input
               type="number"
               min="0"
@@ -824,7 +812,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            Avans (DZD)
+            {t('orders.advanceDzd')}
             <input
               type="number"
               min="0"
@@ -834,7 +822,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            En (cm)
+            {t('orders.width')}
             <input
               type="number"
               min="0"
@@ -844,7 +832,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            Renk sayısı
+            {t('orders.colorCount')}
             <input
               type="number"
               min="0"
@@ -854,7 +842,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            Notlar
+            {t('orders.notes')}
             <textarea
               rows={2}
               value={notes}
@@ -862,18 +850,18 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            Durum
+            {t('orders.status')}
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value as 'DRAFT' | 'CONFIRMED')}
             >
-              <option value="DRAFT">Taslak</option>
-              <option value="CONFIRMED">Onaylı</option>
+              <option value="DRAFT">{t('orders.status.DRAFT')}</option>
+              <option value="CONFIRMED">{t('orders.status.CONFIRMED')}</option>
             </select>
           </label>
           {status === 'CONFIRMED' && (
             <p className="demo-notice" role="status">
-              Onaylı sipariş kaydedildiğinde müşteri cari hesabına satış borcu işlenir.
+              {t('orders.confirmedLedgerNotice')}
             </p>
           )}
 
@@ -886,15 +874,15 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
             }}
           >
             <p>
-              <strong>Toplam:</strong> {formatMoney(liveGross)}
+              <strong>{t('orders.total')}:</strong> {formatCurrency(liveGross)}
             </p>
             <p>
-              <strong>Avans:</strong> {formatMoney(Number(advanceAmount) || 0)}
+              <strong>{t('orders.advance')}:</strong> {formatCurrency(Number(advanceAmount) || 0)}
             </p>
             <p>
-              <strong>Kalan:</strong>{' '}
+              <strong>{t('orders.remaining')}:</strong>{' '}
               <span style={{ color: liveRemaining < 0 ? '#b42318' : undefined }}>
-                {formatMoney(liveRemaining)}
+                {formatCurrency(liveRemaining)}
               </span>
             </p>
           </div>
@@ -905,7 +893,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
               className="btn btn--ghost"
               onClick={() => setFormOpen(false)}
             >
-              Vazgeç
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
@@ -917,7 +905,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                 (status === 'DRAFT' && Number(advanceAmount) > 0)
               }
             >
-              {saving ? 'Kaydediliyor…' : 'Kaydet'}
+              {saving ? t('orders.saving') : t('common.save')}
             </button>
           </div>
         </form>
@@ -925,21 +913,12 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
 
       <ConfirmDialog
         open={confirmConfirm}
-        title="Siparişi onayla"
-        message="Onay sonrası müşteri cari hesabına satış borcu işlenir. Devam edilsin mi?"
-        confirmLabel="Onayla"
+        title={t('orders.confirmTitle')}
+        message={t('orders.confirmMessage')}
+        confirmLabel={t('common.confirm')}
         onCancel={() => setConfirmConfirm(false)}
         onConfirm={() => void handleConfirmStatus()}
       />
     </>
   )
-}
-
-/** Günlük İşler → Yeni sipariş için create modalını açar. */
-export function markOpenOrderCreate(): void {
-  try {
-    sessionStorage.setItem(OPEN_CREATE_FLAG, '1')
-  } catch {
-    // ignore
-  }
 }

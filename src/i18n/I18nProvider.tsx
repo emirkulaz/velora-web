@@ -10,6 +10,7 @@ import { applyDocumentDirection } from './documentDirection'
 import { apiPatch } from '../data/api'
 import { customerTranslations } from './catalogs/customers'
 import { customerRequestTranslations } from './catalogs/customerRequests'
+import { orderTranslations } from './catalogs/orders'
 
 export type UiLanguage = 'tr' | 'fr' | 'en'
 
@@ -31,6 +32,7 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
   tr: {
     ...customerTranslations.tr,
     ...customerRequestTranslations.tr,
+    ...orderTranslations.tr,
     'language.tr': 'Türkçe',
     'language.fr': 'Français',
     'language.en': 'English',
@@ -194,6 +196,7 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
   fr: {
     ...customerTranslations.fr,
     ...customerRequestTranslations.fr,
+    ...orderTranslations.fr,
     'language.tr': 'Türkçe',
     'language.fr': 'Français',
     'language.en': 'English',
@@ -357,6 +360,7 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
   en: {
     ...customerTranslations.en,
     ...customerRequestTranslations.en,
+    ...orderTranslations.en,
     'language.tr': 'Türkçe',
     'language.fr': 'Français',
     'language.en': 'English',
