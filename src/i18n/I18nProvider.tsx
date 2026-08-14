@@ -18,6 +18,7 @@ import { bomTranslations } from './catalogs/boms'
 import { financeTranslations } from './catalogs/finance'
 import { financeDebtTranslations } from './catalogs/financeDebts'
 import { cashFlowTranslations } from './catalogs/cashFlow'
+import { aiCommandTranslations } from './catalogs/aiCommand'
 
 export type UiLanguage = 'tr' | 'fr' | 'en'
 
@@ -47,6 +48,7 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
     ...financeTranslations.tr,
     ...financeDebtTranslations.tr,
     ...cashFlowTranslations.tr,
+    ...aiCommandTranslations.tr,
     'language.tr': 'Türkçe',
     'language.fr': 'Français',
     'language.en': 'English',
@@ -218,6 +220,7 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
     ...financeTranslations.fr,
     ...financeDebtTranslations.fr,
     ...cashFlowTranslations.fr,
+    ...aiCommandTranslations.fr,
     'language.tr': 'Türkçe',
     'language.fr': 'Français',
     'language.en': 'English',
@@ -389,6 +392,7 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
     ...financeTranslations.en,
     ...financeDebtTranslations.en,
     ...cashFlowTranslations.en,
+    ...aiCommandTranslations.en,
     'language.tr': 'Türkçe',
     'language.fr': 'Français',
     'language.en': 'English',

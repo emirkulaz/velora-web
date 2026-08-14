@@ -3,6 +3,7 @@ import { ApiError, apiDownload, apiPost, apiRequest } from '../data/api'
 import { useSpeechToText } from '../hooks/useSpeechToText'
 import { ConfirmDialog } from './ConfirmDialog'
 import { Icon } from './Icons'
+import { useI18n } from '../i18n/I18nProvider'
 
 interface AssistantResponse {
   query: string
@@ -50,54 +51,34 @@ interface ErpChatResponse {
   evidence?: EvidenceItem[]
 }
 
-const COMMAND_PLACEHOLDER =
-  "VEXOR'a sorun"
-
-const QUICK_COMMANDS = [
-  'Bugün neler oldu?',
-  'Kasa ve cari durumunu özetle',
-  'Kritik stokları göster',
-  'Geciken siparişleri listele',
-]
-
-function formatAlgiersTime(value: string | Date): string {
-  const date = typeof value === 'string' ? new Date(value) : value
-  return date.toLocaleString('tr-TR', {
-    timeZone: 'Africa/Algiers',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function mapErrorMessage(error: unknown): string {
+function mapErrorMessage(error: unknown, t: (key: string) => string): string {
   if (error instanceof TypeError) {
-    return 'Sunucuya bağlanılamadı. API veya ağ bağlantısını kontrol edin.'
+    return t('ai.error.network')
   }
   if (!(error instanceof ApiError)) {
-    return 'Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin.'
+    return t('ai.error.unexpected')
   }
   if (error.status === 401) {
-    return 'Oturum süreniz dolmuş olabilir. Lütfen yeniden giriş yapın.'
+    return t('ai.error.unauthorized')
   }
   if (error.status === 403) {
-    return 'Bu soruyu sormak için yetkiniz yok.'
+    return t('ai.error.forbidden')
   }
   if (error.status === 429) {
-    return 'Çok fazla istek gönderdiniz. Lütfen bir dakika sonra tekrar deneyin.'
+    return t('ai.error.rateLimit')
   }
   if (error.status === 503) {
-    return error.message || 'AI asistanına şu anda ulaşılamıyor. Lütfen daha sonra tekrar deneyin.'
+    return error.message || t('ai.error.unavailable')
   }
   if (error.status === 400 || error.status === 404) {
-    return error.message || 'Geçersiz soru. Lütfen metni kontrol edin.'
+    return error.message || t('ai.error.invalid')
   }
-  return error.message || 'Yanıt alınamadı. Lütfen daha sonra tekrar deneyin.'
+  return error.message || t('ai.error.generic')
 }
 
 export function AiCommandPanel({ userName }: { userName?: string }) {
+  const { t, formatDate } = useI18n()
+  const quickCommands = ['today', 'finance', 'stock', 'orders'].map((key) => t(`ai.quick.${key}`))
   const [commandInput, setCommandInput] = useState('')
   const [response, setResponse] = useState<AssistantResponse | null>(null)
   const [error, setError] = useState('')
@@ -117,7 +98,9 @@ export function AiCommandPanel({ userName }: { userName?: string }) {
   const mapResponse = (trimmed: string, data: ErpChatResponse): AssistantResponse => ({
     query: trimmed,
     content: data.answer,
-    generatedAt: formatAlgiersTime(data.dataFreshness || data.generatedAt),
+    generatedAt: formatDate(data.dataFreshness || data.generatedAt, {
+      day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    }),
   writePreview: data.writePreview ?? null,
   reportUrl: data.reportUrl,
   evidence: data.evidence ?? [],
@@ -143,7 +126,7 @@ export function AiCommandPanel({ userName }: { userName?: string }) {
       lastSentRef.current = trimmed
       setResponse(mapResponse(trimmed, data))
     } catch (err) {
-      setError(mapErrorMessage(err))
+      setError(mapErrorMessage(err, t))
     } finally {
       setLoading(false)
     }
@@ -165,10 +148,10 @@ export function AiCommandPanel({ userName }: { userName?: string }) {
               ...mapResponse(prev.query, data),
               query: prev.query,
             }
-          : mapResponse('Onay', data),
+          : mapResponse(t('ai.confirmQuery'), data),
       )
     } catch (err) {
-      setError(mapErrorMessage(err))
+      setError(mapErrorMessage(err, t))
       setConfirmOpen(false)
     } finally {
       setConfirming(false)
@@ -191,11 +174,11 @@ export function AiCommandPanel({ userName }: { userName?: string }) {
   const firstName = userName?.trim().split(/\s+/)[0]
 
   return (
-    <section className="ai-command" aria-label="VEXOR'a Sor">
+    <section className="ai-command" aria-label={t('ai.ask')}>
       <div className="ai-command__header">
-        <span className="ai-command__eyebrow"><Icon name="spark" /> VEXOR'A SOR</span>
-        <h2 className="ai-command__title">{firstName ? `Nasıl gidiyor, ${firstName}?` : 'Bugün nasıl yardımcı olabilirim?'}</h2>
-        <p className="ai-command__subtitle">Şirket verilerinizi sorun, VEXOR doğru modülü sizin için bulsun.</p>
+        <span className="ai-command__eyebrow"><Icon name="spark" /> {t('ai.ask')}</span>
+        <h2 className="ai-command__title">{firstName ? t('ai.greetingNamed', { name: firstName }) : t('ai.greeting')}</h2>
+        <p className="ai-command__subtitle">{t('ai.subtitle')}</p>
       </div>
 
       <div className="ai-command__input-wrap">
@@ -203,7 +186,7 @@ export function AiCommandPanel({ userName }: { userName?: string }) {
           type="button"
           className={`ai-command__plus ${quickOpen ? 'ai-command__plus--active' : ''}`}
           onClick={() => setQuickOpen((open) => !open)}
-          aria-label="Hazır soruları göster"
+          aria-label={t('ai.showQuick')}
           aria-expanded={quickOpen}
         >
           <span aria-hidden="true">+</span>
@@ -223,11 +206,11 @@ export function AiCommandPanel({ userName }: { userName?: string }) {
             setCommandInput(event.target.value)
           }}
           onKeyDown={handleCommandKeyDown}
-          placeholder={COMMAND_PLACEHOLDER}
+          placeholder={t('ai.placeholder')}
           rows={1}
           maxLength={1000}
           disabled={loading || confirming}
-          aria-label="VEXOR'a komut girin"
+          aria-label={t('ai.commandLabel')}
         />
         <div className="ai-command__actions">
           <span className="ai-command__mode"><i aria-hidden="true" /> VEXOR AI</span>
@@ -237,13 +220,13 @@ export function AiCommandPanel({ userName }: { userName?: string }) {
             onClick={voice.isListening ? voice.stop : voice.start}
             disabled={!voice.isSupported || loading || confirming}
             aria-pressed={voice.isListening}
-            aria-label={voice.isListening ? 'Dinlemeyi durdur' : 'Konuşarak yaz'}
+            aria-label={voice.isListening ? t('ai.stopListening') : t('ai.speak')}
             title={
               voice.isSupported
                 ? voice.isListening
-                  ? 'Dinlemeyi durdur'
-                  : 'Konuşarak yaz'
-                : 'Tarayıcınız sesli girişi desteklemiyor'
+                  ? t('ai.stopListening')
+                  : t('ai.speak')
+                : t('ai.speechUnsupported')
             }
           >
             <Icon name="microphone" />
@@ -253,8 +236,8 @@ export function AiCommandPanel({ userName }: { userName?: string }) {
             className="ai-command__submit"
             onClick={() => void handleCommandSubmit()}
             disabled={!commandInput.trim() || loading || confirming}
-            aria-label={loading ? 'Gönderiliyor' : 'Gönder'}
-            title={loading ? 'Gönderiliyor' : 'Gönder'}
+            aria-label={loading ? t('ai.sending') : t('ai.send')}
+            title={loading ? t('ai.sending') : t('ai.send')}
           >
             <span aria-hidden="true">{loading ? '···' : '↑'}</span>
           </button>
@@ -262,8 +245,8 @@ export function AiCommandPanel({ userName }: { userName?: string }) {
       </div>
 
       {quickOpen && (
-        <div className="ai-command__quick" aria-label="Hazır sorular">
-          {QUICK_COMMANDS.map((command) => (
+        <div className="ai-command__quick" aria-label={t('ai.quickQuestions')}>
+          {quickCommands.map((command) => (
             <button key={command} type="button" className="quick-chip" onClick={() => {
               setCommandInput(command)
               setQuickOpen(false)
@@ -275,7 +258,7 @@ export function AiCommandPanel({ userName }: { userName?: string }) {
 
       {loading && (
         <p className="ai-command__status" aria-live="polite">
-          Niyet yorumlanıyor ve yetkili veriler analiz ediliyor…
+          {t('ai.analyzing')}
         </p>
       )}
 
@@ -293,11 +276,11 @@ export function AiCommandPanel({ userName }: { userName?: string }) {
       {response && (
         <article className="demo-response" aria-live="polite">
           <p className="demo-response__query">
-            <span className="demo-response__query-label">Soru: </span>
+            <span className="demo-response__query-label">{t('ai.question')}: </span>
             {response.query}
           </p>
           <div className="demo-response__header">
-            <span className="demo-response__badge">Yanıt</span>
+            <span className="demo-response__badge">{t('ai.answer')}</span>
             <span className="demo-response__time">{response.generatedAt}</span>
           </div>
           <div className="demo-response__body">
@@ -309,16 +292,16 @@ export function AiCommandPanel({ userName }: { userName?: string }) {
             <button type="button" className="btn btn--report" onClick={() => void (async () => {
               const blob = await apiDownload(response.reportUrl!)
               const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'vexor-ai-raporu.pdf'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
-            })()}>PDF Raporunu İndir</button>
+            })()}>{t('ai.downloadReport')}</button>
           )}
           {response.evidence && response.evidence.length > 0 && (
             <div className="ai-evidence">
               <button type="button" className="ai-evidence__toggle" onClick={() => setEvidenceOpen((open) => !open)} aria-expanded={evidenceOpen}>
-                {evidenceOpen ? 'Veri kaynağını gizle' : 'Veri kaynağını göster'}
+                {evidenceOpen ? t('ai.hideEvidence') : t('ai.showEvidence')}
               </button>
               {evidenceOpen && <div className="ai-evidence__details">{response.evidence.map((item) => (
                 <div className="ai-evidence__item" key={`${item.metric}-${item.source}`}>
-                  <strong>{item.metric}</strong><span>{item.source} · {item.recordCount} kayıt · {item.confidence}</span>
+                  <strong>{item.metric}</strong><span>{item.source} · {t('ai.recordCount', { count: item.recordCount })} · {t(`ai.confidence.${item.confidence}`)}</span>
                   {item.period && <span>{item.period.from} · {item.period.timezone ?? 'Africa/Algiers'}</span>}
                   {item.detail && <small>{item.detail}</small>}
                 </div>
@@ -328,7 +311,7 @@ export function AiCommandPanel({ userName }: { userName?: string }) {
 
           {preview && !preview.applied && (
             <div className="ai-write-preview">
-              <div className="ai-write-preview__title">İşlem önizleme</div>
+              <div className="ai-write-preview__title">{t('ai.preview')}</div>
               {preview.lines && preview.lines.length > 0 ? (
                 <ul className="ai-write-preview__list">
                   {preview.lines.map((line) => (
@@ -347,33 +330,33 @@ export function AiCommandPanel({ userName }: { userName?: string }) {
                     disabled={confirming}
                     onClick={() => setConfirmOpen(true)}
                   >
-                    Onayla ve uygula
+                    {t('ai.confirmApply')}
                   </button>
                 </div>
               )}
               {preview.ready === false && (
                 <p className="ai-write-preview__hint">
-                  Onay için ürün, miktar veya müşteri bilgisini netleştirin.
+                  {t('ai.completeDetails')}
                 </p>
               )}
             </div>
           )}
 
           {preview?.applied && (
-            <p className="ai-write-preview__applied">Onaylı işlem uygulandı.</p>
+            <p className="ai-write-preview__applied">{t('ai.applied')}</p>
           )}
         </article>
       )}
 
       <ConfirmDialog
         open={confirmOpen}
-        title="İşlemi onayla"
+        title={t('ai.confirmTitle')}
         message={
           preview
-            ? `${preview.lines?.join('\n') ?? preview.preview}\n\nBu işlem şirket verisini değiştirecek. Onaylıyor musunuz?`
-            : 'Bu işlem şirket verisini değiştirecek. Onaylıyor musunuz?'
+            ? `${preview.lines?.join('\n') ?? preview.preview}\n\n${t('ai.confirmMessage')}`
+            : t('ai.confirmMessage')
         }
-        confirmLabel={confirming ? 'Uygulanıyor…' : 'Onayla'}
+        confirmLabel={confirming ? t('ai.applying') : t('ai.confirm')}
         onCancel={() => setConfirmOpen(false)}
         onConfirm={() => void handleConfirmWrite()}
       />
