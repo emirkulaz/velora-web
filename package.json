@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview --host 0.0.0.0",
     "test": "vitest run",
+    "i18n:check": "vitest run src/i18n/translations.test.ts",
     "test:watch": "vitest"
   },
   "dependencies": {
