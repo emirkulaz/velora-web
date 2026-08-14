@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Modal } from '../components/Modal'
 import { ApiError, apiGet, apiPost } from '../data/api'
 import { algiersYmd } from '../data/dates'
+import { useI18n } from '../i18n/I18nProvider'
 
 type DebtStatus = 'OPEN' | 'PARTIALLY_PAID' | 'PAID' | 'DUE_SOON' | 'OVERDUE'
 
@@ -48,35 +49,14 @@ type DebtDetail = DebtItem & {
 
 type CashAccount = { id: number; code: string; name: string }
 
-const STATUS_LABEL: Record<DebtStatus, string> = {
-  OPEN: 'Açık',
-  PARTIALLY_PAID: 'Kısmi ödenmiş',
-  PAID: 'Ödenmiş',
-  DUE_SOON: 'Vadesi yaklaşıyor',
-  OVERDUE: 'Vadesi geçmiş',
-}
-
-const FILTERS: Array<{ id: 'ALL' | DebtStatus; label: string }> = [
-  { id: 'ALL', label: 'Tümü' },
-  { id: 'OPEN', label: 'Açık' },
-  { id: 'PARTIALLY_PAID', label: 'Kısmi ödenmiş' },
-  { id: 'DUE_SOON', label: 'Vadesi yaklaşan' },
-  { id: 'OVERDUE', label: 'Vadesi geçmiş' },
-  { id: 'PAID', label: 'Ödenmiş' },
-]
-
-function money(value: number, currency = 'DZD') {
-  return `${value.toLocaleString('fr-DZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`
-}
-
-function formatDate(value: string | null) {
-  if (!value) return '—'
-  return new Date(`${value}T12:00:00`).toLocaleDateString('tr-TR', {
-    timeZone: 'Africa/Algiers',
-  })
-}
+const FILTERS: Array<'ALL' | DebtStatus> = ['ALL', 'OPEN', 'PARTIALLY_PAID', 'DUE_SOON', 'OVERDUE', 'PAID']
 
 export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
+  const { t, formatCurrency, formatDate } = useI18n()
+  const money = useCallback((value: number, currency = 'DZD') =>
+    formatCurrency(value, currency), [formatCurrency])
+  const debtDate = useCallback((value: string | null) =>
+    value ? formatDate(value.length === 10 ? `${value}T12:00:00` : value) : '—', [formatDate])
   const [status, setStatus] = useState<'ALL' | DebtStatus>('ALL')
   const [query, setQuery] = useState('')
   const [dueFrom, setDueFrom] = useState('')
@@ -99,7 +79,7 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams()
@@ -120,16 +100,26 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
       setItems(snapshot.items)
       setError('')
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Tedarikçi borçları alınamadı.')
+      setError(err instanceof ApiError ? err.message : t('debt.loadError'))
       setItems([])
     } finally {
       setLoading(false)
     }
-  }
+  }, [dueFrom, dueTo, maxRemaining, minRemaining, query, status, t])
+
+  const openDetail = useCallback(async (row: DebtItem) => {
+    try {
+      const data = await apiGet<DebtDetail>(`/supplier-debts/${row.supplierId}`)
+      setDetail(data)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t('debt.detailError'))
+    }
+  }, [t])
 
   useEffect(() => {
-    void load()
-  }, [status])
+    const timer = window.setTimeout(() => void load(), 0)
+    return () => window.clearTimeout(timer)
+  }, [load])
 
   useEffect(() => {
     if (loading) return
@@ -144,14 +134,17 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
     }
     if (!Number.isFinite(supplierId) || supplierId <= 0) return
     const row = items.find((item) => item.supplierId === supplierId)
-    if (row) {
-      void openDetail(row)
-      return
-    }
-    apiGet<DebtDetail>(`/supplier-debts/${supplierId}`)
-      .then(setDetail)
-      .catch(() => undefined)
-  }, [loading, items])
+    const timer = window.setTimeout(() => {
+      if (row) {
+        void openDetail(row)
+        return
+      }
+      apiGet<DebtDetail>(`/supplier-debts/${supplierId}`)
+        .then(setDetail)
+        .catch(() => undefined)
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [loading, items, openDetail])
 
   useEffect(() => {
     apiGet<{ accounts?: CashAccount[] } | CashAccount[]>('/cash/summary')
@@ -166,20 +159,11 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
       .catch(() => setAccounts([]))
   }, [])
 
-  const openDetail = async (row: DebtItem) => {
-    try {
-      const data = await apiGet<DebtDetail>(`/supplier-debts/${row.supplierId}`)
-      setDetail(data)
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Borç detayı alınamadı.')
-    }
-  }
-
   const openPay = (row: DebtItem) => {
     setPaySupplier(row)
     setPayAmount(row.remaining > 0 ? String(row.remaining) : '')
     setPayDate(algiersYmd())
-    setPayDescription(`Tedarikçi ödemesi · ${row.supplierName}`)
+    setPayDescription(t('debt.paymentDescription', { name: row.supplierName }))
     setPayAccountId('')
     setFormError('')
     setPayOpen(true)
@@ -190,7 +174,7 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
     if (!canWrite || !paySupplier || saving) return
     const amount = Number(payAmount)
     if (!Number.isFinite(amount) || amount < 0.01) {
-      setFormError('Geçerli bir tutar girin.')
+      setFormError(t('debt.invalidAmount'))
       return
     }
     setSaving(true)
@@ -212,7 +196,7 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
       }
       await load()
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Ödeme kaydedilemedi.')
+      setFormError(err instanceof ApiError ? err.message : t('debt.paymentError'))
     } finally {
       setSaving(false)
     }
@@ -222,22 +206,22 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
     () =>
       kpis
         ? [
-            { label: 'Toplam Açık Borç', value: money(kpis.totalOpenDebt, currency) },
-            { label: 'Bu Hafta Ödenecek', value: money(kpis.dueThisWeek, currency) },
-            { label: 'Vadesi Geçmiş', value: money(kpis.overdue, currency) },
-            { label: 'Bu Ay Ödenen', value: money(kpis.paidThisMonth, currency) },
+            { label: t('debt.totalOpen'), value: money(kpis.totalOpenDebt, currency) },
+            { label: t('debt.dueWeek'), value: money(kpis.dueThisWeek, currency) },
+            { label: t('debt.overdueKpi'), value: money(kpis.overdue, currency) },
+            { label: t('debt.paidMonth'), value: money(kpis.paidThisMonth, currency) },
           ]
         : [],
-    [kpis, currency],
+    [currency, kpis, money, t],
   )
 
   return (
     <>
       <section className="panel panel--full">
         <div className="panel__header">
-          <h2>Borçlarım</h2>
+          <h2>{t('debt.title')}</h2>
           <span className="panel__meta">
-            Şirketin tedarikçilere borcu · müşteri alacağı değil
+            {t('debt.subtitle')}
           </span>
         </div>
         <div className="executive-kpis" style={{ padding: '12px 16px 0' }}>
@@ -252,14 +236,14 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
         <div className="module-tabs" style={{ margin: '16px 16px 0' }}>
           {FILTERS.map((filter) => (
             <button
-              key={filter.id}
+              key={filter}
               type="button"
               className={
-                status === filter.id ? 'module-tab module-tab--active' : 'module-tab'
+                status === filter ? 'module-tab module-tab--active' : 'module-tab'
               }
-              onClick={() => setStatus(filter.id)}
+              onClick={() => setStatus(filter)}
             >
-              {filter.label}
+              {filter === 'ALL' ? t('debt.filter.ALL') : t(`debt.status.${filter}`)}
             </button>
           ))}
         </div>
@@ -277,15 +261,15 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
           }}
         >
           <label>
-            Tedarikçi
+            {t('debt.supplier')}
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="İsim ara"
+              placeholder={t('debt.searchName')}
             />
           </label>
           <label>
-            Vade başlangıç
+            {t('debt.dueFrom')}
             <input
               type="date"
               dir="ltr"
@@ -294,7 +278,7 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            Vade bitiş
+            {t('debt.dueTo')}
             <input
               type="date"
               dir="ltr"
@@ -303,7 +287,7 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            Min kalan
+            {t('debt.minRemaining')}
             <input
               type="number"
               min="0"
@@ -314,7 +298,7 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            Max kalan
+            {t('debt.maxRemaining')}
             <input
               type="number"
               min="0"
@@ -326,7 +310,7 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
           </label>
           <div className="form-actions" style={{ alignSelf: 'end' }}>
             <button type="submit" className="btn btn--primary">
-              Filtrele
+              {t('debt.filter')}
             </button>
           </div>
         </form>
@@ -339,15 +323,15 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
           <table className="data-table">
             <thead>
               <tr>
-                <th>Alacaklı / Tedarikçi</th>
-                <th>Borç Türü</th>
-                <th>Toplam Borç</th>
-                <th>Ödenen</th>
-                <th>Kalan</th>
-                <th>Vade</th>
-                <th>Durum</th>
-                <th>Son İşlem</th>
-                {canWrite && <th>İşlem</th>}
+                <th>{t('debt.creditorSupplier')}</th>
+                <th>{t('debt.type')}</th>
+                <th>{t('debt.total')}</th>
+                <th>{t('debt.paid')}</th>
+                <th>{t('debt.remaining')}</th>
+                <th>{t('debt.due')}</th>
+                <th>{t('debt.status')}</th>
+                <th>{t('debt.lastTransaction')}</th>
+                {canWrite && <th>{t('debt.action')}</th>}
               </tr>
             </thead>
             <tbody>
@@ -366,9 +350,9 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
                   <td className="amount-cell">{money(row.totalDebt, row.currency)}</td>
                   <td className="amount-cell">{money(row.paid, row.currency)}</td>
                   <td className="amount-cell">{money(row.remaining, row.currency)}</td>
-                  <td className="date-cell">{formatDate(row.dueDate)}</td>
-                  <td>{STATUS_LABEL[row.status]}</td>
-                  <td className="date-cell">{formatDate(row.lastMovementAt)}</td>
+                  <td className="date-cell">{debtDate(row.dueDate)}</td>
+                  <td>{t(`debt.status.${row.status}`)}</td>
+                  <td className="date-cell">{debtDate(row.lastMovementAt)}</td>
                   {canWrite && (
                     <td>
                       {row.remaining > 0 && (
@@ -377,7 +361,7 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
                           className="btn btn--primary"
                           onClick={() => openPay(row)}
                         >
-                          Ödeme Yap
+                          {t('debt.pay')}
                         </button>
                       )}
                     </td>
@@ -387,7 +371,7 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
               {!loading && items.length === 0 && (
                 <tr>
                   <td colSpan={canWrite ? 9 : 8} className="empty-cell">
-                    Kayıtlı tedarikçi borcu yok. Borç yalnızca mal kabul onayında oluşur.
+                    {t('debt.empty')}
                   </td>
                 </tr>
               )}
@@ -398,24 +382,24 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
 
       <Modal
         open={Boolean(detail)}
-        title={detail ? detail.supplierName : 'Borç detayı'}
+        title={detail ? detail.supplierName : t('debt.detail')}
         onClose={() => setDetail(null)}
         wide
       >
         {detail && (
           <div>
             <p>
-              Toplam alış: <strong>{money(detail.totalDebt, detail.currency)}</strong>
+              {t('debt.totalPurchases')}: <strong>{money(detail.totalDebt, detail.currency)}</strong>
             </p>
             <p>
-              Ödenen: <strong>{money(detail.paid, detail.currency)}</strong>
+              {t('debt.paid')}: <strong>{money(detail.paid, detail.currency)}</strong>
             </p>
             <p>
-              Kalan: <strong>{money(detail.remaining, detail.currency)}</strong>
+              {t('debt.remaining')}: <strong>{money(detail.remaining, detail.currency)}</strong>
             </p>
             <p>
-              Durum: <strong>{STATUS_LABEL[detail.status]}</strong>
-              {detail.dueDate ? ` · vade ${formatDate(detail.dueDate)}` : ''}
+              {t('debt.status')}: <strong>{t(`debt.status.${detail.status}`)}</strong>
+              {detail.dueDate ? ` · ${t('debt.dueValue', { date: debtDate(detail.dueDate) })}` : ''}
             </p>
             {canWrite && detail.remaining > 0 && (
               <div className="form-actions">
@@ -424,26 +408,26 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
                   className="btn btn--primary"
                   onClick={() => openPay(detail)}
                 >
-                  Ödeme Yap
+                  {t('debt.pay')}
                 </button>
               </div>
             )}
-            <h4>Hareketler</h4>
+            <h4>{t('debt.movements')}</h4>
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Tarih</th>
-                    <th>İşlem</th>
-                    <th>Belge</th>
-                    <th>Borç</th>
-                    <th>Ödeme</th>
+                    <th>{t('debt.date')}</th>
+                    <th>{t('debt.transaction')}</th>
+                    <th>{t('debt.document')}</th>
+                    <th>{t('debt.debit')}</th>
+                    <th>{t('debt.payment')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {detail.movements.map((row) => (
                     <tr key={row.id}>
-                      <td>{formatDate(row.date)}</td>
+                      <td>{debtDate(row.date)}</td>
                       <td>{row.label}</td>
                       <td>
                         {row.orderNo
@@ -461,7 +445,7 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
                   {detail.movements.length === 0 && (
                     <tr>
                       <td colSpan={5} className="empty-cell">
-                        Hareket yok.
+                        {t('debt.noMovements')}
                       </td>
                     </tr>
                   )}
@@ -474,7 +458,7 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
 
       <Modal
         open={payOpen}
-        title={paySupplier ? `Ödeme · ${paySupplier.supplierName}` : 'Ödeme'}
+        title={paySupplier ? t('debt.paymentTitle', { name: paySupplier.supplierName }) : t('debt.payment')}
         onClose={() => {
           setPayOpen(false)
           setFormError('')
@@ -482,7 +466,7 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
       >
         <form className="demo-form" onSubmit={(event) => void handlePay(event)}>
           <label>
-            Tutar ({paySupplier?.currency ?? 'DZD'})
+            {t('debt.amount', { currency: paySupplier?.currency ?? 'DZD' })}
             <input
               type="number"
               min="0.01"
@@ -494,7 +478,7 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            Tarih
+            {t('debt.date')}
             <input
               type="date"
               required
@@ -504,7 +488,7 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            Açıklama
+            {t('debt.description')}
             <input
               dir="ltr"
               value={payDescription}
@@ -512,13 +496,13 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            Kasa hesabı
+            {t('debt.cashAccount')}
             <select
               dir="ltr"
               value={payAccountId}
               onChange={(event) => setPayAccountId(event.target.value)}
             >
-              <option value="">Varsayılan (ANA-KASA)</option>
+              <option value="">{t('debt.defaultAccount')}</option>
               {accounts.map((account) => (
                 <option key={account.id} value={account.id}>
                   {account.code} — {account.name}
@@ -540,10 +524,10 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
                 setFormError('')
               }}
             >
-              Vazgeç
+              {t('common.cancel')}
             </button>
             <button type="submit" className="btn btn--primary" disabled={saving}>
-              {saving ? 'Kaydediliyor…' : 'Öde'}
+              {saving ? t('debt.saving') : t('debt.submitPayment')}
             </button>
           </div>
         </form>
