@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { Modal } from '../components/Modal'
 import { ModuleSummary } from '../components/ModuleSummary'
@@ -10,6 +10,7 @@ import {
   type CompanyPresentation,
 } from '../data/companyBranding'
 import { resolveTextileColors } from '../data/textileColors'
+import { useI18n } from '../i18n/I18nProvider'
 
 interface Product {
   id: number
@@ -61,12 +62,6 @@ const EMPTY_FORM: ProductForm = {
   isActive: true,
 }
 
-function unitLabel(unit: ProductUnit) {
-  if (unit === 'METER') return 'Metre'
-  if (unit === 'PIECE') return 'Adet'
-  return 'Adet'
-}
-
 function stripeBackground(colors: { hex: string }[]): string {
   if (colors.length === 1) return colors[0]!.hex
   const stops = colors.flatMap((c, i) => {
@@ -78,12 +73,13 @@ function stripeBackground(colors: { hex: string }[]): string {
 }
 
 function ColorCell({ product }: { product: Product }) {
-  let colors: ReturnType<typeof resolveTextileColors> = []
-  try {
-    colors = resolveTextileColors(product.color, product.name)
-  } catch {
-    colors = []
-  }
+  const colors = (() => {
+    try {
+      return resolveTextileColors(product.color, product.name)
+    } catch {
+      return [] as ReturnType<typeof resolveTextileColors>
+    }
+  })()
   if (colors.length === 0) return '—'
   const label = colors.map((c) => c.label).join(' / ')
   return (
@@ -107,9 +103,10 @@ export function ProductsModule({
   canWrite?: boolean
   canDelete?: boolean
 }) {
+  const { locale, t, formatCurrency, formatNumber } = useI18n()
   const textile = isTextileCompany(company)
   const [search, setSearch] = useState('')
-  const [category, setCategory] = useState('Tümü')
+  const [category, setCategory] = useState('__all__')
   const [products, setProducts] = useState<Product[]>([])
   const [error, setError] = useState('')
   const [formError, setFormError] = useState('')
@@ -121,26 +118,27 @@ export function ProductsModule({
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null)
   const [successNotice, setSuccessNotice] = useState('')
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       const rows = await apiGet<Product[]>('/products')
       setProducts(rows)
       setError('')
     } catch {
-      setError('Ürün verileri alınamadı.')
+      setError(t('products.loadError'))
     } finally {
       setLoading(false)
     }
-  }
+  }, [t])
 
   useEffect(() => {
-    void load()
-  }, [])
+    const timeoutId = window.setTimeout(() => void load(), 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [load])
 
   const categories = useMemo(
     () => [
-      'Tümü',
+      '__all__',
       ...new Set(
         products
           .map((product) => product.category)
@@ -153,19 +151,26 @@ export function ProductsModule({
   const filtered = useMemo(
     () =>
       products.filter((p) => {
-        const matchesCat = category === 'Tümü' || p.category === category
+        const matchesCat = category === '__all__' || p.category === category
         const matchesQuery =
-          p.name.toLocaleLowerCase('tr-TR').includes(search.toLocaleLowerCase('tr-TR')) ||
-          p.code.toLocaleLowerCase('tr-TR').includes(search.toLocaleLowerCase('tr-TR')) ||
-          (p.category?.toLocaleLowerCase('tr-TR').includes(search.toLocaleLowerCase('tr-TR')) ??
+          p.name.toLocaleLowerCase(locale).includes(search.toLocaleLowerCase(locale)) ||
+          p.code.toLocaleLowerCase(locale).includes(search.toLocaleLowerCase(locale)) ||
+          (p.category?.toLocaleLowerCase(locale).includes(search.toLocaleLowerCase(locale)) ??
             false) ||
           (textile &&
-            (p.color?.toLocaleLowerCase('tr-TR').includes(search.toLocaleLowerCase('tr-TR')) ??
+            (p.color?.toLocaleLowerCase(locale).includes(search.toLocaleLowerCase(locale)) ??
               false))
         return matchesCat && matchesQuery
       }),
-    [products, search, category, textile],
+    [products, search, category, textile, locale],
   )
+
+  const categoryLabel = (value: string) => {
+    if (value === '__all__') return t('products.all')
+    if (value === 'Yaka') return t('products.type.COLLAR')
+    if (value === 'Bant') return t('products.type.BAND')
+    return value
+  }
 
   const openCreate = () => {
     setEditing(null)
@@ -198,7 +203,7 @@ export function ProductsModule({
     event.preventDefault()
     if (!canWrite || saving) return
     if (!form.code.trim() || !form.name.trim() || !form.productType || !form.yarnType.trim() || !Number(form.weightGramPerSaleUnit)) {
-      setFormError('Kod, ürün adı, ürün türü, iplik türü ve gramaj zorunludur.')
+      setFormError(t('products.requiredError'))
       return
     }
     setSaving(true)
@@ -228,9 +233,9 @@ export function ProductsModule({
       setFormOpen(false)
       setForm(EMPTY_FORM)
       await load()
-      setSuccessNotice(editing ? 'Ürün güncellendi.' : 'Yeni ürün kaydedildi.')
+      setSuccessNotice(editing ? t('products.updated') : t('products.created'))
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Ürün kaydedilemedi.')
+      setFormError(err instanceof ApiError ? err.message : t('products.saveError'))
     } finally {
       setSaving(false)
     }
@@ -244,9 +249,9 @@ export function ProductsModule({
       await apiDelete(`/products/${deleteTarget.id}`)
       setDeleteTarget(null)
       await load()
-      setSuccessNotice('Ürün silindi.')
+      setSuccessNotice(t('products.deleted'))
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Ürün silinemedi.')
+      setError(err instanceof ApiError ? err.message : t('products.deleteError'))
     } finally {
       setSaving(false)
     }
@@ -261,22 +266,22 @@ export function ProductsModule({
       <SuccessToast message={successNotice} onDismiss={() => setSuccessNotice('')} />
       <ModuleSummary
         items={[
-          { label: 'Toplam Ürün', value: loading ? '…' : String(products.length) },
-          { label: 'Aktif Ürün', value: loading ? '…' : String(activeCount) },
-          { label: 'Kritik Stok', value: loading ? '…' : String(criticalCount) },
+          { label: t('products.total'), value: loading ? '…' : formatNumber(products.length) },
+          { label: t('products.activeProducts'), value: loading ? '…' : formatNumber(activeCount) },
+          { label: t('products.criticalStock'), value: loading ? '…' : formatNumber(criticalCount) },
         ]}
       />
 
       <section className="panel panel--full">
         <div className="panel__header">
-          <h2>Ürün Kataloğu</h2>
+          <h2>{t('products.catalog')}</h2>
           {canWrite ? (
             <button type="button" className="btn btn--primary" onClick={openCreate}>
-              + Yeni Ürün
+              + {t('products.new')}
             </button>
           ) : (
             <span className="panel__meta">
-              {loading ? 'Yükleniyor…' : `${filtered.length} / ${products.length} ürün`}
+              {loading ? t('common.loading') : t('products.count', { filtered: formatNumber(filtered.length), total: formatNumber(products.length) })}
             </span>
           )}
         </div>
@@ -284,10 +289,10 @@ export function ProductsModule({
           search={search}
           onSearchChange={setSearch}
           searchPlaceholder={
-            textile ? 'Ürün, SKU veya renk ara...' : 'Ürün adı veya SKU ara...'
+            textile ? t('products.searchTextile') : t('products.search')
           }
           filter={category}
-          filterOptions={categories.map((item) => ({ value: item, label: item }))}
+          filterOptions={categories.map((item) => ({ value: item, label: categoryLabel(item) }))}
           onFilterChange={setCategory}
         />
         {error && (
@@ -300,15 +305,15 @@ export function ProductsModule({
             <thead>
               <tr>
                 <th>SKU</th>
-                <th>Ürün Adı</th>
-                {textile && <th>Renk</th>}
-                {textile && <th>Ürün Türü</th>}
-                <th>Birim</th>
-                {textile && <th>Gramaj</th>}
-                <th>Satış (DZD)</th>
-                <th>Stok</th>
-                <th>Durum</th>
-                {(canWrite || canDelete) && <th>İşlem</th>}
+                <th>{t('products.name')}</th>
+                {textile && <th>{t('products.color')}</th>}
+                {textile && <th>{t('products.type')}</th>}
+                <th>{t('products.unit')}</th>
+                {textile && <th>{t('products.weight')}</th>}
+                <th>{t('products.saleDzd')}</th>
+                <th>{t('products.stock')}</th>
+                <th>{t('products.status')}</th>
+                {(canWrite || canDelete) && <th>{t('products.actions')}</th>}
               </tr>
             </thead>
             <tbody>
@@ -321,14 +326,14 @@ export function ProductsModule({
                       <ColorCell product={p} />
                     </td>
                   )}
-                  {textile && <td>{p.productType === 'COLLAR' ? 'Yaka' : p.productType === 'BAND' ? 'Bant' : '—'}</td>}
-                  <td>{unitLabel(p.unit)}</td>
-                  {textile && <td>{p.weightGramPerSaleUnit != null ? `${p.weightGramPerSaleUnit.toLocaleString('tr-TR')} g/${p.unit === 'PIECE' ? 'adet' : 'metre'}` : '—'}</td>}
+                  {textile && <td>{p.productType ? t(`products.type.${p.productType}`) : '—'}</td>}
+                  <td>{t(`requests.unit.${p.unit}`)}</td>
+                  {textile && <td>{p.weightGramPerSaleUnit != null ? `${formatNumber(p.weightGramPerSaleUnit)} g/${p.unit === 'PIECE' ? t('products.perPiece') : t('products.perMeter')}` : '—'}</td>}
                   <td className="amount-cell">
-                    {p.salePrice != null ? `${p.salePrice.toLocaleString('fr-DZ')} DZD/${p.unit === 'PIECE' ? 'adet' : 'metre'}` : '—'}
+                    {p.salePrice != null ? `${formatCurrency(p.salePrice)}/${p.unit === 'PIECE' ? t('products.perPiece') : t('products.perMeter')}` : '—'}
                   </td>
-                  <td>{p.stockQuantity.toLocaleString('tr-TR')}</td>
-                  <td>{p.isActive ? 'Aktif' : 'Pasif'}</td>
+                  <td>{formatNumber(p.stockQuantity)}</td>
+                  <td>{p.isActive ? t('products.active') : t('products.inactive')}</td>
                   {(canWrite || canDelete) && (
                     <td>
                       <div className="form-actions" style={{ justifyContent: 'flex-start' }}>
@@ -338,7 +343,7 @@ export function ProductsModule({
                             className="btn btn--ghost"
                             onClick={() => openEdit(p)}
                           >
-                            Düzenle
+                            {t('products.edit')}
                           </button>
                         )}
                         {canDelete && (
@@ -347,7 +352,7 @@ export function ProductsModule({
                             className="btn btn--ghost"
                             onClick={() => setDeleteTarget(p)}
                           >
-                            Sil
+                            {t('products.delete')}
                           </button>
                         )}
                       </div>
@@ -359,8 +364,8 @@ export function ProductsModule({
                 <tr>
                   <td colSpan={columnCount} className="empty-cell">
                     {products.length === 0
-                      ? 'Henüz gerçek ürün kaydı bulunmuyor.'
-                      : 'Arama kriterine uyan ürün bulunamadı.'}
+                      ? t('products.empty')
+                      : t('products.noSearchResult')}
                   </td>
                 </tr>
               )}
@@ -371,7 +376,7 @@ export function ProductsModule({
 
       <Modal
         open={formOpen}
-        title={editing ? 'Ürünü Düzenle' : 'Yeni Ürün'}
+        title={editing ? t('products.editTitle') : t('products.new')}
         onClose={() => {
           setFormOpen(false)
           setFormError('')
@@ -380,7 +385,7 @@ export function ProductsModule({
       >
         <form className="demo-form" onSubmit={(e) => void handleSubmit(e)}>
           <label>
-            Kod (SKU)
+            {t('products.code')}
             <input
               required
               minLength={1}
@@ -390,7 +395,7 @@ export function ProductsModule({
             />
           </label>
           <label>
-            Ürün adı
+            {t('products.name')}
             <input
               required
               minLength={2}
@@ -400,7 +405,7 @@ export function ProductsModule({
             />
           </label>
           <label>
-            Ürün Türü
+            {t('products.type')}
             <select
               required
               dir="ltr"
@@ -410,40 +415,40 @@ export function ProductsModule({
                 setForm((f) => ({ ...f, productType, unit: productType === 'COLLAR' ? 'PIECE' : 'METER' }))
               }}
             >
-              <option value="" disabled>Yaka veya Bant seçin</option>
-              <option value="COLLAR">Yaka</option>
-              <option value="BAND">Bant</option>
+              <option value="" disabled>{t('products.selectType')}</option>
+              <option value="COLLAR">{t('products.type.COLLAR')}</option>
+              <option value="BAND">{t('products.type.BAND')}</option>
             </select>
           </label>
           <label>
-            Satış birimi
-            <input readOnly value={form.unit === 'PIECE' ? 'Adet' : 'Metre'} />
+            {t('products.saleUnit')}
+            <input readOnly value={t(`requests.unit.${form.unit}`)} />
           </label>
           <label>
-            İplik türü
+            {t('products.yarnType')}
             <input required dir="ltr" value={form.yarnType} onChange={(e) => setForm((f) => ({ ...f, yarnType: e.target.value }))} />
           </label>
           <label>
-            Gramaj ({form.unit === 'PIECE' ? 'g/adet' : 'g/metre'})
+            {t('products.weightUnit', { unit: form.unit === 'PIECE' ? `g/${t('products.perPiece')}` : `g/${t('products.perMeter')}` })}
             <input required type="number" min="0.0001" step="0.0001" dir="ltr" value={form.weightGramPerSaleUnit} onChange={(e) => setForm((f) => ({ ...f, weightGramPerSaleUnit: e.target.value }))} />
           </label>
           <label>
-            İplik fiyatı (DZD/kg)
+            {t('products.yarnPrice')}
             <input type="number" min="0" step="0.01" dir="ltr" value={form.yarnPricePerKg} onChange={(e) => setForm((f) => ({ ...f, yarnPricePerKg: e.target.value }))} />
           </label>
           <label>
-            Mevcut stok ({form.unit === 'PIECE' ? 'adet' : 'metre'})
-            <input readOnly value={(editing?.stockQuantity ?? 0).toLocaleString('tr-TR')} />
+            {t('products.currentStock', { unit: form.unit === 'PIECE' ? t('products.perPiece') : t('products.perMeter') })}
+            <input readOnly value={formatNumber(editing?.stockQuantity ?? 0)} />
           </label>
           <label>
-            Stok kg karşılığı
-            <input readOnly value={form.weightGramPerSaleUnit ? `${((Number(form.weightGramPerSaleUnit) * (editing?.stockQuantity ?? 0)) / 1000).toLocaleString('tr-TR')} kg` : '—'} />
+            {t('products.stockKg')}
+            <input readOnly value={form.weightGramPerSaleUnit ? `${formatNumber((Number(form.weightGramPerSaleUnit) * (editing?.stockQuantity ?? 0)) / 1000)} kg` : '—'} />
           </label>
           <label className="check-row">
-            <input type="checkbox" checked={form.isActive} onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))} /> Aktif
+            <input type="checkbox" checked={form.isActive} onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))} /> {t('products.active')}
           </label>
           <label>
-            Renk
+            {t('products.color')}
             <input
               dir="ltr"
               value={form.color}
@@ -451,7 +456,7 @@ export function ProductsModule({
             />
           </label>
           <label>
-            En (cm)
+            {t('products.width')}
             <input
               type="number"
               min="0"
@@ -462,7 +467,7 @@ export function ProductsModule({
             />
           </label>
           <label>
-            Satış fiyatı (DZD)
+            {t('products.salePrice')}
             <input
               type="number"
               min="0"
@@ -473,7 +478,7 @@ export function ProductsModule({
             />
           </label>
           <label>
-            Maliyet fiyatı (DZD)
+            {t('products.costPrice')}
             <input
               type="number"
               min="0"
@@ -498,10 +503,10 @@ export function ProductsModule({
                 setEditing(null)
               }}
             >
-              Vazgeç
+              {t('common.cancel')}
             </button>
             <button type="submit" className="btn btn--primary" disabled={saving}>
-              {saving ? 'Kaydediliyor…' : 'Kaydet'}
+              {saving ? t('products.saving') : t('common.save')}
             </button>
           </div>
         </form>
@@ -509,13 +514,13 @@ export function ProductsModule({
 
       <ConfirmDialog
         open={deleteTarget != null}
-        title="Ürünü sil"
+        title={t('products.deleteTitle')}
         message={
           deleteTarget
-            ? `"${deleteTarget.name}" silinecek. Stok veya üretim hareketlerinde kullanılan ürünler silinemez. Devam edilsin mi?`
+            ? t('products.deleteConfirm', { name: deleteTarget.name })
             : ''
         }
-        confirmLabel="Sil"
+        confirmLabel={t('products.delete')}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={() => void handleDelete()}
       />
