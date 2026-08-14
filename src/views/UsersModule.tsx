@@ -6,16 +6,15 @@ import { ModuleSummary } from '../components/ModuleSummary'
 import { ModuleToolbar } from '../components/ModuleToolbar'
 import { apiDelete, apiGet, apiPatch, apiRequest } from '../data/api'
 
-import { roleLabels, type AppUserRole } from '../data/roles'
-
-type UserRole = AppUserRole
-
-interface CompanyUser {
+interface Employee {
   id: number
+  userId: number | null
+  externalCode: string | null
   name: string
-  email: string
-  role: UserRole
   isActive: boolean
+  monthlySalaryGross: number | null
+  salaryCurrency: string
+  salaryReviewRequired: boolean
   createdAt: string
 }
 
@@ -26,10 +25,9 @@ const taskLabels: Record<string, string> = { MACHINE_OPERATOR: 'Makine Operatör
 const statusLabels: Record<string, string> = { PLANNED: 'Planlandı', PRESENT: 'İşte', COMPLETED: 'Tamamlandı', ABSENT: 'Gelmedi', ON_LEAVE: 'İzinli', SICK_LEAVE: 'Raporlu', CANCELLED: 'İptal' }
 
 export function UsersModule() {
-  const [users, setUsers] = useState<CompanyUser[]>([])
+  const [users, setUsers] = useState<Employee[]>([])
   const [search, setSearch] = useState('')
   const [error, setError] = useState('')
-  const [formOpen, setFormOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [tab, setTab] = useState<'team' | 'daily' | 'plan' | 'leave' | 'weekly'>('team')
   const [view, setView] = useState<'daily' | 'weekly'>('daily')
@@ -41,9 +39,9 @@ export function UsersModule() {
   const [editingPlan, setEditingPlan] = useState<WorkPlan | null>(null)
 
   const loadUsers = () => {
-    apiGet<CompanyUser[]>('/users')
+    apiGet<Employee[]>('/employees')
       .then(setUsers)
-      .catch(() => setError('Kullanıcılar alınamadı.'))
+      .catch(() => setError('Çalışanlar alınamadı.'))
   }
 
   useEffect(() => {
@@ -62,40 +60,18 @@ export function UsersModule() {
   const filtered = useMemo(() => {
     const query = search.toLocaleLowerCase('tr-TR')
     return users.filter((user) =>
-      [user.name, user.email, roleLabels[user.role]]
+      [user.name, user.externalCode ?? '']
         .some((value) => value.toLocaleLowerCase('tr-TR').includes(query)),
     )
   }, [search, users])
+  const knownSalaryTotal = useMemo(
+    () => users.reduce((sum, user) => sum + (user.monthlySalaryGross ?? 0), 0),
+    [users],
+  )
   const weeklyDays = useMemo(() => Array.from({ length: 7 }, (_, index) => {
     const date = new Date(`${selectedDate}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + index)
     return date.toISOString().slice(0, 10)
   }), [selectedDate])
-
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const form = new FormData(event.currentTarget)
-    setError('')
-    setIsSubmitting(true)
-
-    try {
-      await apiRequest<CompanyUser>('/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: form.get('name'),
-          email: form.get('email'),
-          password: form.get('password'),
-          role: form.get('role'),
-        }),
-      })
-      setFormOpen(false)
-      loadUsers()
-    } catch {
-      setError('Kullanıcı oluşturulamadı. E-posta veya parola kurallarını kontrol edin.')
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
 
   const submitPlan = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); const form = new FormData(event.currentTarget); setError(''); setIsSubmitting(true)
@@ -119,10 +95,10 @@ export function UsersModule() {
       </div>
       {tab === 'team' ? <><ModuleSummary
         items={[
-          { label: 'Toplam Kullanıcı', value: String(users.length) },
+          { label: 'Toplam Personel', value: String(users.length) },
           { label: 'Aktif', value: String(users.filter((user) => user.isActive).length) },
-          { label: 'Yönetici', value: String(users.filter((user) => user.role === 'ADMIN').length) },
-          { label: 'Görüntüleyici', value: String(users.filter((user) => user.role === 'VIEWER').length) },
+          { label: 'Aylık Maaş Toplamı', value: `${knownSalaryTotal.toLocaleString('tr-TR')} DZD` },
+          { label: 'İnceleme Gereken', value: String(users.filter((user) => user.salaryReviewRequired).length) },
         ]}
       />
 
@@ -135,9 +111,7 @@ export function UsersModule() {
           reportLabel="Personel Raporu"
           search={search}
           onSearchChange={setSearch}
-          searchPlaceholder="Ad, e-posta veya rol ara..."
-          actionLabel="+ Çalışan Ekle"
-          onAction={() => setFormOpen(true)}
+          searchPlaceholder="Personel ara..."
         />
         {error && <p className="demo-notice">{error}</p>}
         <div className="table-wrap">
@@ -145,11 +119,10 @@ export function UsersModule() {
             <thead>
               <tr>
                 <th>Ad</th>
-                <th>E-posta</th>
-                <th>Rol</th>
+                <th>Personel Kodu</th>
+                <th>Aylık Maaş</th>
                 <th>Bugünkü Vardiya</th>
                 <th>Bugünkü Durum</th>
-                <th>Oluşturulma</th>
               </tr>
             </thead>
             <tbody>
@@ -158,15 +131,14 @@ export function UsersModule() {
                 return (
                 <tr key={user.id}>
                   <td>{user.name}</td>
-                  <td>{user.email}</td>
-                  <td>{roleLabels[user.role]}</td>
+                  <td>{user.externalCode ?? 'KOD YOK'}</td>
+                  <td>{user.monthlySalaryGross === null ? 'İnceleme gerekiyor' : `${user.monthlySalaryGross.toLocaleString('tr-TR')} ${user.salaryCurrency}`}</td>
                   <td>{currentPlan?.shift ? `${currentPlan.shift.name} · ${currentPlan.shift.startTime}–${currentPlan.shift.endTime}` : 'Planlanmadı'}</td>
                   <td>{currentPlan ? statusLabels[currentPlan.status] ?? currentPlan.status : '—'}</td>
-                  <td className="date-cell">{new Date(user.createdAt).toLocaleDateString('tr-TR')}</td>
                 </tr>
               )})}
               {!error && filtered.length === 0 && (
-                <tr><td colSpan={6}>Henüz çalışan hesabı bulunmuyor.</td></tr>
+                <tr><td colSpan={5}>Henüz personel bulunmuyor.</td></tr>
               )}
             </tbody>
           </table>
@@ -186,41 +158,6 @@ export function UsersModule() {
         </tbody></table></div>
       </section>}
 
-      <Modal open={formOpen} title="Çalışan Hesabı Ekle" onClose={() => setFormOpen(false)}>
-        <form className="demo-form" onSubmit={submit}>
-          <label>
-            Ad soyad
-            <input name="name" type="text" minLength={2} required />
-          </label>
-          <label>
-            E-posta
-            <input name="email" type="email" autoComplete="email" required />
-          </label>
-          <label>
-            Geçici parola
-            <input name="password" type="password" minLength={12} autoComplete="new-password" required />
-          </label>
-          <label>
-            Rol
-            <select name="role" defaultValue="MEMBER">
-              <option value="MEMBER">Çalışan — günlük operasyonlar</option>
-              <option value="VIEWER">Görüntüleyici — yalnızca okuma</option>
-              <option value="ACCOUNTING_OPERATOR">Muhasebe Operatörü — finans ve cari</option>
-              <option value="PRODUCTION_MANAGER">Üretim Müdürü — üretim ve stok</option>
-              <option value="ADMIN">Yönetici — TRIKOMEX tam yetki</option>
-              <option value="OWNER">Şirket Sahibi — tam yetki</option>
-            </select>
-          </label>
-          <div className="form-actions">
-            <button type="button" className="btn btn--ghost" onClick={() => setFormOpen(false)}>
-              Vazgeç
-            </button>
-            <button type="submit" className="btn btn--primary" disabled={isSubmitting}>
-              {isSubmitting ? 'Oluşturuluyor…' : 'Hesap Oluştur'}
-            </button>
-          </div>
-        </form>
-      </Modal>
       <Modal open={planOpen} title={editingPlan ? 'Çalışma Planını Düzenle' : 'Yeni Çalışma Planı'} onClose={() => { setPlanOpen(false); setEditingPlan(null) }}>
         <form className="demo-form" onSubmit={submitPlan} key={editingPlan?.id ?? 'new'}>
           <label>Personel<select name="employeeId" defaultValue={editingPlan?.employeeId} required>{users.filter((user) => user.isActive).map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
