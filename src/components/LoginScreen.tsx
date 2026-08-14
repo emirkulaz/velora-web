@@ -145,7 +145,7 @@ export function LoginScreen({
           <h1 id="login-title">{t('login.title')}</h1>
           <p>
             {rememberedTrikomex
-              ? `${rememberedCompany.name} operasyonlarını güvenle yönetin.`
+              ? t('login.companyDescription', { name: rememberedCompany.name })
               : t('login.description')}
           </p>
         </div>
@@ -233,8 +233,8 @@ export function LoginScreen({
           className="login-showcase"
           aria-label={
             rememberedTrikomex
-              ? `${rememberedCompany.name} üretim yönetimi`
-              : 'VEXOR üretim yönetimi'
+              ? t('login.showcaseLabel', { name: rememberedCompany.name })
+              : t('login.showcaseLabel', { name: 'VEXOR' })
           }
         >
           <div className="login-showcase__image" />
@@ -249,11 +249,8 @@ export function LoginScreen({
             <span className="login-showcase__eyebrow">
               {rememberedTrikomex ? rememberedCompany.name : 'VEXOR ERP'}
             </span>
-            <h2>Üretiminizdeki her kritik karar tek ekranda.</h2>
-            <p>
-              Stok, sipariş, üretim ve finans akışlarını VEXOR ile net ve
-              hızlı yönetin.
-            </p>
+            <h2>{t('login.showcaseTitle')}</h2>
+            <p>{t('login.showcaseDescription')}</p>
             {rememberedTrikomex && (
               <p className="login-showcase__tagline">
                 Meilleures Couleurs · Meilleurs Vêtements
@@ -261,16 +258,16 @@ export function LoginScreen({
             )}
             <div className="login-showcase__stats">
               <div>
-                <strong>Stok</strong>
-                <span>anlık görünürlük</span>
+                <strong>{t('login.stock')}</strong>
+                <span>{t('login.stockDetail')}</span>
               </div>
               <div>
-                <strong>Üretim</strong>
-                <span>kontrollü akış</span>
+                <strong>{t('login.production')}</strong>
+                <span>{t('login.productionDetail')}</span>
               </div>
               <div>
                 <strong>VEXOR AI</strong>
-                <span>doğal dil desteği</span>
+                <span>{t('login.aiDetail')}</span>
               </div>
             </div>
           </div>
