@@ -3,7 +3,7 @@ import { ModuleSummary } from '../components/ModuleSummary'
 import { ReportButton } from '../components/ReportButton'
 import { apiGet } from '../data/api'
 import type { MenuId } from '../data/types'
-import { markOpenCustomerRequestCreate } from './CustomerRequestsModule'
+import { markOpenCustomerRequestCreate } from './customerRequestActions'
 import {
   markOpenFinanceCash,
   markOpenFinanceCollection,

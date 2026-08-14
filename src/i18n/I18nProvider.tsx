@@ -9,6 +9,7 @@ import {
 import { applyDocumentDirection } from './documentDirection'
 import { apiPatch } from '../data/api'
 import { customerTranslations } from './catalogs/customers'
+import { customerRequestTranslations } from './catalogs/customerRequests'
 
 export type UiLanguage = 'tr' | 'fr' | 'en'
 
@@ -29,6 +30,7 @@ const LANGUAGE_STORAGE_KEY = 'velora.uiLanguage'
 export const translations: Record<UiLanguage, Record<string, string>> = {
   tr: {
     ...customerTranslations.tr,
+    ...customerRequestTranslations.tr,
     'language.tr': 'Türkçe',
     'language.fr': 'Français',
     'language.en': 'English',
@@ -191,6 +193,7 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
   },
   fr: {
     ...customerTranslations.fr,
+    ...customerRequestTranslations.fr,
     'language.tr': 'Türkçe',
     'language.fr': 'Français',
     'language.en': 'English',
@@ -353,6 +356,7 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
   },
   en: {
     ...customerTranslations.en,
+    ...customerRequestTranslations.en,
     'language.tr': 'Türkçe',
     'language.fr': 'Français',
     'language.en': 'English',

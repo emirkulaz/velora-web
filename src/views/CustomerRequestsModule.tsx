@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { Modal } from '../components/Modal'
 import { ModuleSummary } from '../components/ModuleSummary'
@@ -6,6 +6,8 @@ import { ModuleToolbar } from '../components/ModuleToolbar'
 import { StatusBadge } from '../components/StatusBadge'
 import { SuccessToast } from '../components/Toast'
 import { ApiError, apiGet, apiRequest } from '../data/api'
+import { useI18n } from '../i18n/I18nProvider'
+import { OPEN_CUSTOMER_REQUEST_CREATE_FLAG } from './customerRequestActions'
 
 type CustomerOption = { id: number; name: string }
 type ProductOption = { id: number; code: string; name: string }
@@ -31,24 +33,6 @@ type CustomerRequest = {
     orderNumber: string
     status: string
   } | null
-}
-
-const OPEN_CREATE_FLAG = 'velora.customerRequests.openCreate'
-
-const STATUS_LABELS: Record<string, string> = {
-  NEW: 'Yeni',
-  REVIEWING: 'İnceleniyor',
-  QUOTED: 'Teklifli',
-  CONVERTED_TO_ORDER: 'Siparişe dönüştü',
-  CANCELLED: 'İptal',
-}
-
-const METHOD_LABELS: Record<string, string> = {
-  PHONE: 'Telefon',
-  WHATSAPP: 'WhatsApp',
-  EMAIL: 'E-posta',
-  IN_PERSON: 'Yüz yüze',
-  OTHER: 'Diğer',
 }
 
 function todayYmd(): string {
@@ -79,6 +63,7 @@ export function CustomerRequestsModule({
 }: {
   canWrite?: boolean
 }) {
+  const { locale, t, formatDate, formatNumber } = useI18n()
   const [rows, setRows] = useState<CustomerRequest[]>([])
   const [customers, setCustomers] = useState<CustomerOption[]>([])
   const [products, setProducts] = useState<ProductOption[]>([])
@@ -104,7 +89,7 @@ export function CustomerRequestsModule({
   const [quotedUnitPrice, setQuotedUnitPrice] = useState('')
   const [notes, setNotes] = useState('')
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
@@ -120,30 +105,31 @@ export function CustomerRequestsModule({
       setError(
         err instanceof ApiError
           ? err.message
-          : 'Talepler yüklenemedi. Migration uygulanmış mı ve yetkiniz var mı kontrol edin.',
+          : t('requests.loadError'),
       )
     } finally {
       setLoading(false)
     }
-  }
+  }, [t])
 
   useEffect(() => {
-    void load()
-  }, [])
+    const timeoutId = window.setTimeout(() => void load(), 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [load])
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLocaleLowerCase('tr-TR')
+    const q = query.trim().toLocaleLowerCase(locale)
     if (!q) return rows
     return rows.filter(
       (row) =>
-        (row.customerName ?? '').toLocaleLowerCase('tr-TR').includes(q) ||
-        row.requestText.toLocaleLowerCase('tr-TR').includes(q) ||
-        (row.requestedProduct ?? '').toLocaleLowerCase('tr-TR').includes(q) ||
-        (STATUS_LABELS[row.status] ?? row.status)
-          .toLocaleLowerCase('tr-TR')
+        (row.customerName ?? '').toLocaleLowerCase(locale).includes(q) ||
+        row.requestText.toLocaleLowerCase(locale).includes(q) ||
+        (row.requestedProduct ?? '').toLocaleLowerCase(locale).includes(q) ||
+        t(`requests.status.${row.status}`)
+          .toLocaleLowerCase(locale)
           .includes(q),
     )
-  }, [rows, query])
+  }, [locale, query, rows, t])
 
   const today = todayYmd()
   const summary = {
@@ -178,9 +164,17 @@ export function CustomerRequestsModule({
 
   useEffect(() => {
     if (!canWrite) return
+    let shouldOpen = false
     try {
-      if (sessionStorage.getItem(OPEN_CREATE_FLAG) === '1') {
-        sessionStorage.removeItem(OPEN_CREATE_FLAG)
+      if (sessionStorage.getItem(OPEN_CUSTOMER_REQUEST_CREATE_FLAG) === '1') {
+        sessionStorage.removeItem(OPEN_CUSTOMER_REQUEST_CREATE_FLAG)
+        shouldOpen = true
+      }
+    } catch {
+      // ignore storage errors
+    }
+    if (!shouldOpen) return
+    const timeoutId = window.setTimeout(() => {
         setCustomerId('')
         setContactDate(todayYmd())
         setContactMethod('PHONE')
@@ -195,21 +189,19 @@ export function CustomerRequestsModule({
         setNotes('')
         setFormError('')
         setFormOpen(true)
-      }
-    } catch {
-      // ignore storage errors
-    }
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
   }, [canWrite])
 
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault()
     if (!canWrite || saving) return
     if (!customerId) {
-      setFormError('Önce müşteriyi seçin.')
+      setFormError(t('requests.selectCustomerError'))
       return
     }
     if (!requestText.trim()) {
-      setFormError('Görüşme / talep metnini girin.')
+      setFormError(t('requests.textRequired'))
       return
     }
     setSaving(true)
@@ -241,11 +233,11 @@ export function CustomerRequestsModule({
       })
       setFormOpen(false)
       resetForm()
-      setSuccessNotice('Yeni talep kaydedildi.')
+      setSuccessNotice(t('requests.created'))
       await load()
     } catch (err) {
       setFormError(
-        err instanceof ApiError ? err.message : 'Talep kaydedilemedi.',
+        err instanceof ApiError ? err.message : t('requests.saveError'),
       )
     } finally {
       setSaving(false)
@@ -255,7 +247,7 @@ export function CustomerRequestsModule({
   const requestConvert = (row: CustomerRequest) => {
     if (!canConvertRequest(row)) {
       setError(
-        'Siparişe dönüştürmek için miktar, birim ve teklif birim fiyatı gerekli. Bunları talep oluştururken girin veya önce kaydı tamamlayın.',
+        t('requests.convertRequirements'),
       )
       return
     }
@@ -275,7 +267,7 @@ export function CustomerRequestsModule({
       await load()
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.message : 'Siparişe dönüştürülemedi.',
+        err instanceof ApiError ? err.message : t('requests.convertError'),
       )
     } finally {
       setSaving(false)
@@ -296,10 +288,10 @@ export function CustomerRequestsModule({
         body: JSON.stringify({ status }),
       })
       await load()
-      setSuccessNotice('Talep durumu güncellendi.')
+      setSuccessNotice(t('requests.statusUpdated'))
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.message : 'Talep durumu güncellenemedi.',
+        err instanceof ApiError ? err.message : t('requests.statusUpdateError'),
       )
     } finally {
       setSaving(false)
@@ -313,7 +305,7 @@ export function CustomerRequestsModule({
       <SuccessToast message={successNotice} onDismiss={() => setSuccessNotice('')} />
       <section className="panel panel--full">
         <div className="panel__header">
-          <h2>Müşteri Talepleri / Görüşmeler</h2>
+          <h2>{t('requests.title')}</h2>
           {canWrite && (
             <div className="panel__header-actions">
               <button
@@ -321,7 +313,7 @@ export function CustomerRequestsModule({
                 className="btn btn--primary"
                 onClick={openCreate}
               >
-                + Yeni Talep
+                + {t('requests.new')}
               </button>
             </div>
           )}
@@ -329,30 +321,29 @@ export function CustomerRequestsModule({
 
         {!loading && !error && rows.length === 0 && (
           <div className="empty-state empty-state--cta">
-            <p>Kayıtlı talep yok.</p>
+            <p>{t('requests.empty')}</p>
             {canWrite && (
               <button
                 type="button"
                 className="btn btn--primary"
                 onClick={openCreate}
               >
-                + Yeni Talep
+                + {t('requests.new')}
               </button>
             )}
           </div>
         )}
 
         <p className="empty-state" style={{ marginBottom: 12 }}>
-          Yeni talep → müşteri seç → görüşme ve talep bilgilerini gir → kaydet →
-          listede gör → istenirse siparişe dönüştür.
+          {t('requests.workflow')}
         </p>
 
         <ModuleToolbar
           reportType="requests"
-          reportLabel="Talep Raporu"
+          reportLabel={t('requests.report')}
           search={query}
           onSearchChange={setQuery}
-          searchPlaceholder="Müşteri, ürün veya talep metni ara…"
+          searchPlaceholder={t('requests.search')}
         />
 
         {error && (
@@ -361,31 +352,31 @@ export function CustomerRequestsModule({
           </p>
         )}
         {loading ? (
-          <p className="empty-state">Yükleniyor…</p>
+          <p className="empty-state">{t('common.loading')}</p>
         ) : filtered.length === 0 ? (
           rows.length > 0 ? (
-            <p className="empty-state">Arama kriterine uyan talep bulunamadı.</p>
+            <p className="empty-state">{t('requests.noSearchResult')}</p>
           ) : null
         ) : (
           <div className="table-wrap">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Tarih</th>
-                  <th>Müşteri</th>
-                  <th>Kanal</th>
-                  <th>Talep</th>
-                  <th>Durum</th>
+                  <th>{t('requests.date')}</th>
+                  <th>{t('requests.customer')}</th>
+                  <th>{t('requests.channel')}</th>
+                  <th>{t('requests.request')}</th>
+                  <th>{t('requests.status')}</th>
                   <th />
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((row) => (
                   <tr key={row.id}>
-                    <td>{row.contactDate.split('-').reverse().join('.')}</td>
+                    <td>{formatDate(`${row.contactDate}T12:00:00`)}</td>
                     <td>{row.customerName ?? row.customerId}</td>
                     <td>
-                      {METHOD_LABELS[row.contactMethod] ?? row.contactMethod}
+                      {t(`requests.method.${row.contactMethod}`)}
                     </td>
                     <td title={row.requestText}>
                       {row.requestText.length > 60
@@ -394,7 +385,7 @@ export function CustomerRequestsModule({
                     </td>
                     <td>
                       <StatusBadge
-                        status={STATUS_LABELS[row.status] ?? row.status}
+                        status={t(`requests.status.${row.status}`)}
                       />
                     </td>
                     <td>
@@ -402,7 +393,7 @@ export function CustomerRequestsModule({
                         row.status !== 'CONVERTED_TO_ORDER' &&
                         row.status !== 'CANCELLED' && (
                           <select
-                            aria-label={`${row.customerName ?? 'Müşteri'} talep durumu`}
+                            aria-label={t('requests.statusAria', { name: row.customerName ?? t('requests.customer') })}
                             value={row.status}
                             disabled={saving}
                             onChange={(event) =>
@@ -416,10 +407,10 @@ export function CustomerRequestsModule({
                               )
                             }
                           >
-                            <option value="NEW">Yeni</option>
-                            <option value="REVIEWING">İnceleniyor</option>
-                            <option value="QUOTED">Teklifli</option>
-                            <option value="CANCELLED">İptal</option>
+                            <option value="NEW">{t('requests.status.NEW')}</option>
+                            <option value="REVIEWING">{t('requests.status.REVIEWING')}</option>
+                            <option value="QUOTED">{t('requests.status.QUOTED')}</option>
+                            <option value="CANCELLED">{t('requests.status.CANCELLED')}</option>
                           </select>
                         )}
                       {canWrite &&
@@ -430,12 +421,12 @@ export function CustomerRequestsModule({
                             className="btn btn--ghost"
                             title={
                               canConvertRequest(row)
-                                ? 'Taslak sipariş oluştur'
-                                : 'Miktar, birim ve teklif fiyatı gerekli'
+                                ? t('requests.createDraft')
+                                : t('requests.missingQuote')
                             }
                             onClick={() => requestConvert(row)}
                           >
-                            Siparişe dönüştür
+                            {t('requests.convert')}
                           </button>
                         )}
                       {row.convertedOrder && (
@@ -454,16 +445,16 @@ export function CustomerRequestsModule({
 
       <ModuleSummary
         items={[
-          { label: 'Toplam talep', value: String(summary.total) },
-          { label: 'Açık', value: String(summary.open) },
-          { label: 'Siparişe dönen', value: String(summary.converted) },
-          { label: 'Bugün', value: String(summary.today) },
+          { label: t('requests.total'), value: formatNumber(summary.total) },
+          { label: t('requests.open'), value: formatNumber(summary.open) },
+          { label: t('requests.converted'), value: formatNumber(summary.converted) },
+          { label: t('requests.today'), value: formatNumber(summary.today) },
         ]}
       />
 
       <Modal
         open={formOpen}
-        title="Yeni müşteri talebi"
+        title={t('requests.newTitle')}
         onClose={() => {
           setFormOpen(false)
           setFormError('')
@@ -471,25 +462,25 @@ export function CustomerRequestsModule({
       >
         <form className="demo-form" onSubmit={(e) => void handleCreate(e)}>
           <p className="empty-state" style={{ marginBottom: 4 }}>
-            1) Müşteriyi seç → 2) Görüşme ve talep bilgilerini gir → 3) Kaydet
+            {t('requests.formWorkflow')}
           </p>
 
           <fieldset className="demo-form__fieldset">
-            <legend>1. Müşteri</legend>
+            <legend>{t('requests.customerStep')}</legend>
             {customers.length === 0 ? (
               <p className="demo-notice" role="status">
-                Önce Müşteriler menüsünden bir müşteri ekleyin.
+                {t('requests.addCustomerFirst')}
               </p>
             ) : (
               <label>
-                Müşteri
+                {t('requests.customer')}
                 <select
                   required
                   dir="ltr"
                   value={customerId}
                   onChange={(e) => setCustomerId(e.target.value)}
                 >
-                  <option value="">Seçin</option>
+                  <option value="">{t('requests.select')}</option>
                   {customers.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
@@ -501,9 +492,9 @@ export function CustomerRequestsModule({
           </fieldset>
 
           <fieldset className="demo-form__fieldset">
-            <legend>2. Görüşme ve talep</legend>
+            <legend>{t('requests.detailsStep')}</legend>
             <label>
-              Görüşme tarihi
+              {t('requests.contactDate')}
               <input
                 type="date"
                 required
@@ -513,32 +504,32 @@ export function CustomerRequestsModule({
               />
             </label>
             <label>
-              Kanal
+              {t('requests.channel')}
               <select
                 dir="ltr"
                 value={contactMethod}
                 onChange={(e) => setContactMethod(e.target.value)}
               >
-                <option value="PHONE">Telefon</option>
-                <option value="WHATSAPP">WhatsApp</option>
-                <option value="EMAIL">E-posta</option>
-                <option value="IN_PERSON">Yüz yüze</option>
-                <option value="OTHER">Diğer</option>
+                <option value="PHONE">{t('requests.method.PHONE')}</option>
+                <option value="WHATSAPP">{t('requests.method.WHATSAPP')}</option>
+                <option value="EMAIL">{t('requests.method.EMAIL')}</option>
+                <option value="IN_PERSON">{t('requests.method.IN_PERSON')}</option>
+                <option value="OTHER">{t('requests.method.OTHER')}</option>
               </select>
             </label>
             <label>
-              Talep metni
+              {t('requests.text')}
               <textarea
                 required
                 rows={3}
                 dir="ltr"
                 value={requestText}
                 onChange={(e) => setRequestText(e.target.value)}
-                placeholder="Müşterinin istediği ürün / miktar / renk vb."
+                placeholder={t('requests.textPlaceholder')}
               />
             </label>
             <label>
-              İstenen ürün
+              {t('requests.requestedProduct')}
               <input
                 dir="ltr"
                 list="customer-request-products"
@@ -554,7 +545,7 @@ export function CustomerRequestsModule({
               </datalist>
             </label>
             <label>
-              En (cm)
+              {t('requests.width')}
               <input
                 type="number"
                 min="0"
@@ -565,7 +556,7 @@ export function CustomerRequestsModule({
               />
             </label>
             <label>
-              Renk sayısı
+              {t('requests.colorCount')}
               <input
                 type="number"
                 min="0"
@@ -576,7 +567,7 @@ export function CustomerRequestsModule({
               />
             </label>
             <label>
-              Tahmini miktar
+              {t('requests.estimatedQuantity')}
               <input
                 type="number"
                 min="0.001"
@@ -587,19 +578,19 @@ export function CustomerRequestsModule({
               />
             </label>
             <label>
-              Birim
+              {t('requests.unit')}
               <select
                 dir="ltr"
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
               >
-                <option value="METER">Metre</option>
-                <option value="PIECE">Adet</option>
-                <option value="KILOGRAM">Kilogram</option>
+                <option value="METER">{t('requests.unit.METER')}</option>
+                <option value="PIECE">{t('requests.unit.PIECE')}</option>
+                <option value="KILOGRAM">{t('requests.unit.KILOGRAM')}</option>
               </select>
             </label>
             <label>
-              İstenen teslim
+              {t('requests.requestedDelivery')}
               <input
                 type="date"
                 dir="ltr"
@@ -608,7 +599,7 @@ export function CustomerRequestsModule({
               />
             </label>
             <label>
-              Teklif birim fiyat (DZD)
+              {t('requests.quotedUnitPrice')}
               <input
                 type="number"
                 min="0"
@@ -619,10 +610,10 @@ export function CustomerRequestsModule({
               />
             </label>
             <p className="empty-state" style={{ margin: 0 }}>
-              Siparişe dönüştürmek için miktar, birim ve teklif fiyatı gerekir.
+              {t('requests.convertHint')}
             </p>
             <label>
-              Notlar
+              {t('requests.notes')}
               <textarea
                 rows={2}
                 dir="ltr"
@@ -647,14 +638,14 @@ export function CustomerRequestsModule({
                 setFormError('')
               }}
             >
-              Vazgeç
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               className="btn btn--primary"
               disabled={saving || customers.length === 0}
             >
-              {saving ? 'Kaydediliyor…' : '3. Kaydet'}
+              {saving ? t('requests.saving') : t('requests.saveStep')}
             </button>
           </div>
         </form>
@@ -662,25 +653,16 @@ export function CustomerRequestsModule({
 
       <ConfirmDialog
         open={convertId != null}
-        title="Siparişe dönüştür"
+        title={t('requests.convertTitle')}
         message={
           convertTarget
-            ? `${convertTarget.customerName ?? 'Müşteri'} talebi taslak siparişe dönüşecek. Aynı talep ikinci kez dönüştürülemez. Devam?`
-            : 'Talep metni korunarak taslak sipariş oluşturulacak. Devam?'
+            ? t('requests.convertConfirm', { name: convertTarget.customerName ?? t('requests.customer') })
+            : t('requests.convertFallback')
         }
-        confirmLabel="Dönüştür"
+        confirmLabel={t('requests.confirmConvert')}
         onCancel={() => setConvertId(null)}
         onConfirm={() => void handleConvert()}
       />
     </>
   )
-}
-
-/** Günlük İşler → Yeni müşteri talebi için create modalını açar. */
-export function markOpenCustomerRequestCreate(): void {
-  try {
-    sessionStorage.setItem(OPEN_CREATE_FLAG, '1')
-  } catch {
-    // ignore
-  }
 }
