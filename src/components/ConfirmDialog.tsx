@@ -1,3 +1,5 @@
+import { useI18n } from '../i18n/I18nProvider'
+
 interface ConfirmDialogProps {
   open: boolean
   title: string
@@ -11,10 +13,11 @@ export function ConfirmDialog({
   open,
   title,
   message,
-  confirmLabel = 'Onayla',
+  confirmLabel,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const { t } = useI18n()
   if (!open) return null
 
   return (
@@ -33,10 +36,10 @@ export function ConfirmDialog({
           <p className="confirm-message">{message}</p>
           <div className="confirm-actions">
             <button type="button" className="btn btn--ghost" onClick={onCancel}>
-              Vazgeç
+              {t('common.cancel')}
             </button>
             <button type="button" className="btn btn--primary" onClick={onConfirm}>
-              {confirmLabel}
+              {confirmLabel ?? t('common.confirm')}
             </button>
           </div>
         </div>

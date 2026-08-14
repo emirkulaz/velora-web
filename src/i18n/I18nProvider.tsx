@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useMemo,
   useState,
@@ -14,13 +15,17 @@ type TranslationParams = Record<string, string | number>
 
 type I18nContextValue = {
   language: UiLanguage
+  locale: string
   setLanguage: (language: UiLanguage) => void
   t: (key: string, params?: TranslationParams) => string
+  formatNumber: (value: number, options?: Intl.NumberFormatOptions) => string
+  formatCurrency: (value: number, currency?: string) => string
+  formatDate: (value: string | number | Date, options?: Intl.DateTimeFormatOptions) => string
 }
 
 const LANGUAGE_STORAGE_KEY = 'velora.uiLanguage'
 
-const translations: Record<UiLanguage, Record<string, string>> = {
+export const translations: Record<UiLanguage, Record<string, string>> = {
   tr: {
     'language.tr': 'Türkçe',
     'language.fr': 'Français',
@@ -75,6 +80,16 @@ const translations: Record<UiLanguage, Record<string, string>> = {
     'common.cancel': 'Vazgeç',
     'common.save': 'Kaydet',
     'common.close': 'Kapat',
+    'common.confirm': 'Onayla',
+    'common.later': 'Daha sonra',
+    'common.openMenu': 'Menüyü aç',
+    'common.closeMenu': 'Menüyü kapat',
+    'common.lightMode': 'Açık moda geç',
+    'common.darkMode': 'Koyu moda geç',
+    'pwa.updateReady': 'Yeni VEXOR sürümü hazır.',
+    'pwa.updateDescription': 'Güncel arayüzü kullanmak için sayfayı yenileyin.',
+    'pwa.updateNow': 'Şimdi yenile',
+    'pwa.dismissUpdate': 'Güncelleme bildirimini kapat',
     'common.install': 'Uygulamayı yükle',
     'common.installHint':
       'Masaüstü ikonu için: Chrome/Edge menü → “Uygulamayı yükle” / “Install app”. Safari: Paylaş → Ana Ekrana Ekle. HTTPS gerekir.',
@@ -162,6 +177,16 @@ const translations: Record<UiLanguage, Record<string, string>> = {
     'common.cancel': 'Annuler',
     'common.save': 'Enregistrer',
     'common.close': 'Fermer',
+    'common.confirm': 'Confirmer',
+    'common.later': 'Plus tard',
+    'common.openMenu': 'Ouvrir le menu',
+    'common.closeMenu': 'Fermer le menu',
+    'common.lightMode': 'Activer le thème clair',
+    'common.darkMode': 'Activer le thème sombre',
+    'pwa.updateReady': 'Une nouvelle version de VEXOR est disponible.',
+    'pwa.updateDescription': 'Actualisez la page pour utiliser la nouvelle interface.',
+    'pwa.updateNow': 'Actualiser',
+    'pwa.dismissUpdate': 'Fermer la notification de mise à jour',
     'common.install': 'Installer l’application',
     'common.installHint':
       'Pour l’icône bureau : menu Chrome/Edge → « Installer l’application ». Safari : Partager → Sur l’écran d’accueil. HTTPS requis.',
@@ -249,6 +274,16 @@ const translations: Record<UiLanguage, Record<string, string>> = {
     'common.cancel': 'Cancel',
     'common.save': 'Save',
     'common.close': 'Close',
+    'common.confirm': 'Confirm',
+    'common.later': 'Later',
+    'common.openMenu': 'Open menu',
+    'common.closeMenu': 'Close menu',
+    'common.lightMode': 'Switch to light mode',
+    'common.darkMode': 'Switch to dark mode',
+    'pwa.updateReady': 'A new VEXOR version is ready.',
+    'pwa.updateDescription': 'Refresh the page to use the latest interface.',
+    'pwa.updateNow': 'Refresh now',
+    'pwa.dismissUpdate': 'Dismiss update notification',
     'common.install': 'Install app',
     'common.installHint':
       'For a desktop icon: Chrome/Edge menu → “Install app”. Safari: Share → Add to Home Screen. HTTPS required.',
@@ -286,6 +321,7 @@ const translations: Record<UiLanguage, Record<string, string>> = {
 
 const fallbackContext: I18nContextValue = {
   language: 'tr',
+  locale: 'tr-TR',
   setLanguage: () => undefined,
   t: (key, params) => {
     const template = translations.tr[key] ?? key
@@ -294,6 +330,20 @@ const fallbackContext: I18nContextValue = {
       template,
     )
   },
+  formatNumber: (value, options) => value.toLocaleString('tr-TR', options),
+  formatCurrency: (value, currency = 'DZD') =>
+    `${value.toLocaleString('tr-TR', { maximumFractionDigits: 2 })} ${currency}`,
+  formatDate: (value, options) =>
+    new Date(value).toLocaleDateString('tr-TR', {
+      timeZone: 'Africa/Algiers',
+      ...options,
+    }),
+}
+
+const locales: Record<UiLanguage, string> = {
+  tr: 'tr-TR',
+  fr: 'fr-DZ',
+  en: 'en-GB',
 }
 
 const I18nContext = createContext<I18nContextValue>(fallbackContext)
@@ -305,22 +355,25 @@ function initialLanguage(): UiLanguage {
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<UiLanguage>(initialLanguage)
+  const locale = locales[language]
+  const selectLanguage = useCallback((nextLanguage: UiLanguage) => {
+    localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage)
+    applyDocumentDirection(nextLanguage)
+    setLanguageState(nextLanguage)
+    if (
+      localStorage.getItem('velora.accessToken') ||
+      sessionStorage.getItem('velora.accessToken')
+    ) {
+      void apiPatch('/users/me', { preferredLanguage: nextLanguage }).catch(
+        () => undefined,
+      )
+    }
+  }, [])
   const value = useMemo<I18nContextValue>(
     () => ({
       language,
-      setLanguage: (nextLanguage) => {
-        localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage)
-        applyDocumentDirection(nextLanguage)
-        setLanguageState(nextLanguage)
-        if (
-          localStorage.getItem('velora.accessToken') ||
-          sessionStorage.getItem('velora.accessToken')
-        ) {
-          void apiPatch('/users/me', { preferredLanguage: nextLanguage }).catch(
-            () => undefined,
-          )
-        }
-      },
+      locale,
+      setLanguage: selectLanguage,
       t: (key, params) => {
         const template = translations[language][key] ?? translations.tr[key] ?? key
         return Object.entries(params ?? {}).reduce(
@@ -328,8 +381,16 @@ export function I18nProvider({ children }: { children: ReactNode }) {
           template,
         )
       },
+      formatNumber: (number, options) => number.toLocaleString(locale, options),
+      formatCurrency: (number, currency = 'DZD') =>
+        `${number.toLocaleString(locale, { maximumFractionDigits: 2 })} ${currency}`,
+      formatDate: (date, options) =>
+        new Date(date).toLocaleDateString(locale, {
+          timeZone: 'Africa/Algiers',
+          ...options,
+        }),
     }),
-    [language],
+    [language, locale, selectLanguage],
   )
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>

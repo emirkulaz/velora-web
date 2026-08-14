@@ -19,7 +19,6 @@ import { CRITICAL_ALERTS, menuItems, type MenuId } from './data/demoData'
 import { canAccessMenu, type AppUserRole } from './data/roles'
 import { applyDocumentDirection, getUiTextDirection } from './i18n/documentDirection'
 import { enforceLtrOnTree } from './i18n/enforceLtrFields'
-import { getActiveUiLanguage } from './i18n/uiLanguage'
 import { useI18n } from './i18n/I18nProvider'
 import { fileToAvatarDataUrl } from './utils/avatarImage'
 import { DailyWorkActions } from './views/DailyWorkModule'
@@ -57,7 +56,7 @@ function initials(name: string) {
 }
 
 function App() {
-  const { t, setLanguage } = useI18n()
+  const { language, t, setLanguage } = useI18n()
   const [activeMenu, setActiveMenu] = useState<MenuId>('overview')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
@@ -67,9 +66,7 @@ function App() {
   const [avatarError, setAvatarError] = useState('')
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
-  const [uiDir, setUiDir] = useState<'ltr' | 'rtl'>(() =>
-    getUiTextDirection(getActiveUiLanguage()),
-  )
+  const uiDir = getUiTextDirection(language)
   const [isAuthenticated, setIsAuthenticated] = useState(() =>
     Boolean(
       localStorage.getItem('velora.accessToken') ??
@@ -104,9 +101,9 @@ function App() {
   )
 
   useEffect(() => {
-    setUiDir(applyDocumentDirection(getActiveUiLanguage()))
+    applyDocumentDirection(language)
     enforceLtrOnTree(document)
-  }, [])
+  }, [language])
 
   useEffect(() => {
     if (!isAuthenticated) return
@@ -142,7 +139,7 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, setLanguage])
 
   useEffect(() => {
     const handleSessionExpired = () => {
@@ -231,7 +228,7 @@ function App() {
         <button
           type="button"
           className="sidebar-overlay"
-          aria-label="Menüyü kapat"
+          aria-label={t('common.closeMenu')}
           onClick={closeSidebar}
         />
       )}
@@ -286,7 +283,7 @@ function App() {
             <button
               type="button"
               className="menu-toggle"
-              aria-label="Menüyü aç"
+              aria-label={t('common.openMenu')}
               onClick={() => setSidebarOpen(true)}
             >
               <Icon name="menu" />
@@ -300,9 +297,9 @@ function App() {
               type="button"
               className="theme-toggle"
               onClick={() => setDarkMode((enabled) => !enabled)}
-              aria-label={darkMode ? 'Açık moda geç' : 'Koyu moda geç'}
+              aria-label={darkMode ? t('common.lightMode') : t('common.darkMode')}
               aria-pressed={darkMode}
-              title={darkMode ? 'Açık moda geç' : 'Koyu moda geç'}
+              title={darkMode ? t('common.lightMode') : t('common.darkMode')}
             >
               <span aria-hidden="true">{darkMode ? '☀' : '◐'}</span>
             </button>

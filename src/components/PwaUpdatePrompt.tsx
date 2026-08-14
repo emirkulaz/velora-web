@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { registerSW } from 'virtual:pwa-register'
+import { useI18n } from '../i18n/I18nProvider'
 
 export function PwaUpdatePrompt() {
+  const { t } = useI18n()
   const [needRefresh, setNeedRefresh] = useState(false)
   const updateRef = useRef<((reloadPage?: boolean) => Promise<void>) | null>(null)
 
@@ -17,23 +19,23 @@ export function PwaUpdatePrompt() {
   return (
     <aside className="pwa-update" role="status" aria-live="polite">
       <div>
-        <strong>Yeni VEXOR sürümü hazır.</strong>
-        <span>Güncel arayüzü kullanmak için sayfayı yenileyin.</span>
+        <strong>{t('pwa.updateReady')}</strong>
+        <span>{t('pwa.updateDescription')}</span>
       </div>
       <button
         type="button"
         className="btn btn--primary"
         onClick={() => void updateRef.current?.(true)}
       >
-        Şimdi yenile
+        {t('pwa.updateNow')}
       </button>
       <button
         type="button"
         className="btn btn--ghost"
-        aria-label="Güncelleme bildirimini kapat"
+        aria-label={t('pwa.dismissUpdate')}
         onClick={() => setNeedRefresh(false)}
       >
-        Daha sonra
+        {t('common.later')}
       </button>
     </aside>
   )
