@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { AiCommandPanel } from './components/AiCommandPanel'
 import { ExchangeRateTicker } from './components/ExchangeRateTicker'
 import { Icon } from './components/Icons'
@@ -421,12 +421,15 @@ function App() {
             <DailyWorkActions onNavigate={setActiveMenu} />
           )}
           <div className="module-area">
+            <Suspense fallback={<p className="demo-notice">{t('common.loading')}</p>}>
             {renderModule(
               activeMenu,
               companyPresentation,
               currentUser?.role,
               setActiveMenu,
+              t,
             )}
+            </Suspense>
           </div>
           <footer className="content-credit" aria-label="Credits">
             Created by Emir Kulaz

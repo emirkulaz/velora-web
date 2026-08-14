@@ -1,4 +1,6 @@
-import type { ReactElement } from 'react'
+/* Route-level lazy components intentionally share this module with the render factory. */
+/* eslint-disable react-refresh/only-export-components */
+import { lazy, type ReactElement } from 'react'
 import type { CompanyPresentation } from '../data/companyBranding'
 import {
   canDeleteCustomers,
@@ -14,25 +16,26 @@ import {
   type AppUserRole,
 } from '../data/roles'
 import type { MenuId } from '../data/types'
-import { CostCalculationModule } from './CostCalculationModule'
-import { CustomerRequestsModule } from './CustomerRequestsModule'
-import { CustomersModule } from './CustomersModule'
-import { DailyWorkModule } from './DailyWorkModule'
-import { FinanceAiModule } from './FinanceAiModule'
-import { FinanceModule } from './FinanceModule'
-import { InventoryModule } from './InventoryModule'
-import { OrdersModule } from './OrdersModule'
-import { OverviewModule } from './OverviewModule'
-import { ProductionModule } from './ProductionModule'
-import { ProductsModule } from './ProductsModule'
-import { UsersModule } from './UsersModule'
-import { UserManagementModule } from './UserManagementModule'
+const CostCalculationModule = lazy(() => import('./CostCalculationModule').then((m) => ({ default: m.CostCalculationModule })))
+const CustomerRequestsModule = lazy(() => import('./CustomerRequestsModule').then((m) => ({ default: m.CustomerRequestsModule })))
+const CustomersModule = lazy(() => import('./CustomersModule').then((m) => ({ default: m.CustomersModule })))
+const DailyWorkModule = lazy(() => import('./DailyWorkModule').then((m) => ({ default: m.DailyWorkModule })))
+const FinanceAiModule = lazy(() => import('./FinanceAiModule').then((m) => ({ default: m.FinanceAiModule })))
+const FinanceModule = lazy(() => import('./FinanceModule').then((m) => ({ default: m.FinanceModule })))
+const InventoryModule = lazy(() => import('./InventoryModule').then((m) => ({ default: m.InventoryModule })))
+const OrdersModule = lazy(() => import('./OrdersModule').then((m) => ({ default: m.OrdersModule })))
+const OverviewModule = lazy(() => import('./OverviewModule').then((m) => ({ default: m.OverviewModule })))
+const ProductionModule = lazy(() => import('./ProductionModule').then((m) => ({ default: m.ProductionModule })))
+const ProductsModule = lazy(() => import('./ProductsModule').then((m) => ({ default: m.ProductsModule })))
+const UsersModule = lazy(() => import('./UsersModule').then((m) => ({ default: m.UsersModule })))
+const UserManagementModule = lazy(() => import('./UserManagementModule').then((m) => ({ default: m.UserManagementModule })))
 
 export function renderModule(
   id: MenuId,
   company: CompanyPresentation | null,
   role?: AppUserRole | null,
   onNavigate?: (menuId: MenuId) => void,
+  t: (key: string) => string = (key) => key,
 ): ReactElement {
   switch (id) {
     case 'dailyWork':
@@ -90,7 +93,7 @@ export function renderModule(
     case 'userManagement':
       return canManageUsers(role)
         ? <UserManagementModule />
-        : <p className="demo-notice" role="alert">Bu sayfaya yalnızca yöneticiler erişebilir.</p>
+        : <p className="demo-notice" role="alert">{t('userMgmt.adminOnly')}</p>
     default:
       return <OverviewModule role={role} onNavigate={onNavigate} />
   }
