@@ -12,12 +12,18 @@ import {
   type QuickLoginAccount,
 } from '../data/quickLoginAccounts'
 import { useI18n } from '../i18n/I18nProvider'
+import { apiGetWithToken, apiPublicPost } from '../data/api'
 import { LanguageSelector } from './LanguageSelector'
 import { VeloraLogo } from './VeloraLogo'
 import './LoginScreen.css'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? '/api'
 const REMEMBERED_LOGIN_KEY = 'velora.rememberedLogin'
+
+type LoginResponse = {
+  accessToken?: string
+  mfaRequired?: boolean
+  mfaToken?: string
+}
 
 interface LoginScreenProps {
   rememberedCompany: CompanyPresentation | null
@@ -54,17 +60,7 @@ export function LoginScreen({
         ? { email: identifier, password: passwordValue }
         : { login: identifier, password: passwordValue }
 
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-
-      if (!response.ok) {
-        throw new Error('Giriş yapılamadı.')
-      }
-
-      const result = (await response.json()) as { accessToken?: string; mfaRequired?: boolean; mfaToken?: string }
+      const result = await apiPublicPost<LoginResponse>('/auth/login', payload)
       if (result.mfaRequired && result.mfaToken) {
         setPassword('')
         setMfaToken(result.mfaToken)
@@ -86,14 +82,10 @@ export function LoginScreen({
       let company: CompanyPresentation | null = null
 
       try {
-        const companyResponse = await fetch(`${API_BASE_URL}/companies`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        })
-
-        if (companyResponse.ok) {
-          company = rememberCompanyPresentation(await companyResponse.json())
-          if (!rememberMe) clearLastCompanyPresentation()
-        }
+        company = rememberCompanyPresentation(
+          await apiGetWithToken<CompanyPresentation>('/companies', accessToken),
+        )
+        if (!rememberMe) clearLastCompanyPresentation()
       } catch {
         // Preserve the successful session when the optional presentation lookup fails.
       }
@@ -115,9 +107,10 @@ export function LoginScreen({
     event.preventDefault()
     setError(''); setIsSubmitting(true)
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/mfa/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mfaToken, code: mfaCode.trim() }) })
-      if (!response.ok) throw new Error('MFA doğrulanamadı.')
-      const { accessToken } = await response.json() as { accessToken: string }
+      const { accessToken } = await apiPublicPost<{ accessToken: string }>(
+        '/auth/mfa/verify',
+        { mfaToken, code: mfaCode.trim() },
+      )
       const tokenStorage = rememberMe ? localStorage : sessionStorage
       tokenStorage.setItem('velora.accessToken', accessToken)
       ;(rememberMe ? sessionStorage : localStorage).removeItem('velora.accessToken')

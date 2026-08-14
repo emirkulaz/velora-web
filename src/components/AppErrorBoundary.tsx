@@ -11,7 +11,13 @@ export class AppErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('VEXOR arayüz hatası', error, info.componentStack)
+    console.error(
+      JSON.stringify({
+        event: 'ui_render_failed',
+        errorType: error.name || 'Error',
+        componentStackAvailable: Boolean(info.componentStack),
+      }),
+    )
   }
 
   render() {
