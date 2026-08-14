@@ -10,6 +10,7 @@
     "preview": "vite preview --host 0.0.0.0",
     "test": "vitest run",
     "i18n:check": "vitest run src/i18n/translations.test.ts",
+    "bundle:check": "node scripts/check-production-bundle.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {
