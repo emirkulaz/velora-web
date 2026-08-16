@@ -78,7 +78,16 @@ function mapErrorMessage(error: unknown, t: (key: string) => string): string {
 
 export function AiCommandPanel({ userName }: { userName?: string }) {
   const { t, formatDate } = useI18n()
-  const quickCommands = ['today', 'finance', 'stock', 'orders'].map((key) => t(`ai.quick.${key}`))
+  const quickCommands = [
+    'today',
+    'finance',
+    'orders',
+    'stock',
+    'production',
+    'absent',
+    'debtors',
+    'risks',
+  ].map((key) => t(`ai.quick.${key}`))
   const [commandInput, setCommandInput] = useState('')
   const [response, setResponse] = useState<AssistantResponse | null>(null)
   const [error, setError] = useState('')
