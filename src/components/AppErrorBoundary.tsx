@@ -4,13 +4,7 @@ import { useI18n } from '../i18n/I18nProvider'
 type Props = { children: ReactNode; title: string; description: string; reload: string }
 type State = { failed: boolean }
 
-const CHUNK_RECOVERY_KEY = 'vexor.chunk-recovery'
-
-function isStaleAssetError(error: Error) {
-  return /failed to fetch dynamically imported module|importing a module script failed|loading chunk|chunkloaderror/i.test(
-    error.message,
-  )
-}
+const RECOVERY_ATTEMPT_KEY = 'vexor.error-recovery-attempted'
 
 class ErrorBoundaryImpl extends Component<Props, State> {
   state: State = { failed: false }
@@ -28,8 +22,8 @@ class ErrorBoundaryImpl extends Component<Props, State> {
       }),
     )
 
-    if (isStaleAssetError(error) && !sessionStorage.getItem(CHUNK_RECOVERY_KEY)) {
-      sessionStorage.setItem(CHUNK_RECOVERY_KEY, '1')
+    if (!sessionStorage.getItem(RECOVERY_ATTEMPT_KEY)) {
+      sessionStorage.setItem(RECOVERY_ATTEMPT_KEY, '1')
       const url = new URL(window.location.href)
       url.searchParams.set('vexor-reload', String(Date.now()))
       window.location.replace(url.toString())
