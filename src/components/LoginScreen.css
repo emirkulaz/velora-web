@@ -108,12 +108,19 @@
   padding: 0 14px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  color: var(--color-text-heading);
+  background: #fff;
+  color: #111827;
   font-size: 15px;
   outline: none;
   direction: ltr !important;
   text-align: left !important;
   unicode-bidi: normal !important;
+}
+
+.login-form input::placeholder,
+.login-form textarea::placeholder {
+  color: #4b5563;
+  opacity: 1;
 }
 
 .login-form input[type='number'],
