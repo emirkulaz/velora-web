@@ -6,6 +6,18 @@ type State = { failed: boolean }
 
 const RECOVERY_ATTEMPT_KEY = 'vexor.error-recovery-attempted'
 
+async function clearStaleAppAssets() {
+  if ('serviceWorker' in navigator) {
+    const registrations = await navigator.serviceWorker.getRegistrations()
+    await Promise.all(registrations.map((registration) => registration.unregister()))
+  }
+
+  if ('caches' in window) {
+    const cacheNames = await caches.keys()
+    await Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)))
+  }
+}
+
 class ErrorBoundaryImpl extends Component<Props, State> {
   state: State = { failed: false }
 
@@ -26,7 +38,7 @@ class ErrorBoundaryImpl extends Component<Props, State> {
       sessionStorage.setItem(RECOVERY_ATTEMPT_KEY, '1')
       const url = new URL(window.location.href)
       url.searchParams.set('vexor-reload', String(Date.now()))
-      window.location.replace(url.toString())
+      void clearStaleAppAssets().finally(() => window.location.replace(url.toString()))
     }
   }
 
