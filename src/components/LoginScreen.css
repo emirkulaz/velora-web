@@ -109,7 +109,9 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: #fff;
-  color: #111827;
+  color: #111827 !important;
+  -webkit-text-fill-color: #111827;
+  caret-color: #111827;
   font-size: 15px;
   outline: none;
   direction: ltr !important;
@@ -119,8 +121,15 @@
 
 .login-form input::placeholder,
 .login-form textarea::placeholder {
-  color: #4b5563;
+  color: #374151;
   opacity: 1;
+}
+
+.login-form input:-webkit-autofill,
+.login-form input:-webkit-autofill:hover,
+.login-form input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #111827;
+  box-shadow: 0 0 0 1000px #fff inset;
 }
 
 .login-form input[type='number'],
