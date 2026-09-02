@@ -25,6 +25,7 @@ import { loginExperienceTranslations } from './catalogs/loginExperience'
 import { userManagementTranslations } from './catalogs/userManagement'
 import { workforceTranslations } from './catalogs/workforce'
 import { costCalculationTranslations } from './catalogs/costCalculation'
+import { invoiceTranslations } from './catalogs/invoices'
 import { remainingUiTranslations } from './catalogs/remainingUi'
 
 export type UiLanguage = 'tr' | 'fr' | 'en'
@@ -60,6 +61,7 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
     ...userManagementTranslations.tr,
     ...workforceTranslations.tr,
     ...costCalculationTranslations.tr,
+    ...invoiceTranslations.tr,
     ...remainingUiTranslations.tr,
     'language.tr': 'Türkçe',
     'language.fr': 'Français',
@@ -169,6 +171,7 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
     'common.loading': 'Yükleniyor…',
     'common.cancel': 'Vazgeç',
     'common.save': 'Kaydet',
+    'common.edit': 'Düzenle',
     'common.close': 'Kapat',
     'common.search': 'Ara',
     'common.searchPlaceholder': 'Ara…',
@@ -237,6 +240,7 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
     ...userManagementTranslations.fr,
     ...workforceTranslations.fr,
     ...costCalculationTranslations.fr,
+    ...invoiceTranslations.fr,
     ...remainingUiTranslations.fr,
     'language.tr': 'Türkçe',
     'language.fr': 'Français',
@@ -346,6 +350,7 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
     'common.loading': 'Chargement…',
     'common.cancel': 'Annuler',
     'common.save': 'Enregistrer',
+    'common.edit': 'Modifier',
     'common.close': 'Fermer',
     'common.search': 'Rechercher',
     'common.searchPlaceholder': 'Rechercher…',
@@ -414,6 +419,7 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
     ...userManagementTranslations.en,
     ...workforceTranslations.en,
     ...costCalculationTranslations.en,
+    ...invoiceTranslations.en,
     ...remainingUiTranslations.en,
     'language.tr': 'Türkçe',
     'language.fr': 'Français',
@@ -523,6 +529,7 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
     'common.loading': 'Loading…',
     'common.cancel': 'Cancel',
     'common.save': 'Save',
+    'common.edit': 'Edit',
     'common.close': 'Close',
     'common.search': 'Search',
     'common.searchPlaceholder': 'Search…',
@@ -592,7 +599,7 @@ const fallbackContext: I18nContextValue = {
   formatCurrency: (value, currency = 'DZD') =>
     `${value.toLocaleString('tr-TR', { maximumFractionDigits: 2 })} ${currency}`,
   formatDate: (value, options) =>
-    new Date(value).toLocaleDateString('tr-TR', {
+    new Date(value).toLocaleString('tr-TR', {
       timeZone: 'Africa/Algiers',
       ...options,
     }),
@@ -643,7 +650,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       formatCurrency: (number, currency = 'DZD') =>
         `${number.toLocaleString(locale, { maximumFractionDigits: 2 })} ${currency}`,
       formatDate: (date, options) =>
-        new Date(date).toLocaleDateString(locale, {
+        new Date(date).toLocaleString(locale, {
           timeZone: 'Africa/Algiers',
           ...options,
         }),

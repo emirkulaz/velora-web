@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { ConfirmDialog } from '../components/ConfirmDialog'
+import { SuccessToast } from '../components/Toast'
 import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from '../data/api'
 import { isTextileCompany, type CompanyPresentation } from '../data/companyBranding'
 import { useI18n } from '../i18n/I18nProvider'
@@ -64,13 +65,22 @@ export function BomRecipesTab({
   const [boms, setBoms] = useState<Bom[]>([])
   const [products, setProducts] = useState<ProductOption[]>([])
   const [error, setError] = useState('')
+  const [successNotice, setSuccessNotice] = useState('')
   const [saving, setSaving] = useState(false)
   const [productId, setProductId] = useState('')
   const [name, setName] = useState(() => t('boms.defaultName'))
   const [deleteTarget, setDeleteTarget] = useState<Bom | null>(null)
+  const [editingBom, setEditingBom] = useState<Bom | null>(null)
   const [items, setItems] = useState<BomItem[]>([
     { materialProductId: 0, quantityPerUnit: 15, unit: 'GRAM', wastePercent: 3 },
   ])
+
+  const resetForm = useCallback(() => {
+    setEditingBom(null)
+    setProductId('')
+    setName(t('boms.defaultName'))
+    setItems([{ materialProductId: 0, quantityPerUnit: 15, unit: 'GRAM', wastePercent: 3 }])
+  }, [t])
 
   const load = useCallback(async () => {
     try {
@@ -91,7 +101,25 @@ export function BomRecipesTab({
     return () => window.clearTimeout(timeoutId)
   }, [load])
 
-  const handleCreate = async (event: FormEvent) => {
+  const openEdit = (bom: Bom) => {
+    setEditingBom(bom)
+    setProductId(String(bom.productId))
+    setName(bom.name)
+    setItems(
+      bom.items.length > 0
+        ? bom.items.map((item) => ({
+            materialProductId: item.materialProductId,
+            quantityPerUnit: item.quantityPerUnit,
+            unit: item.unit,
+            wastePercent: item.wastePercent,
+            notes: item.notes,
+          }))
+        : [{ materialProductId: 0, quantityPerUnit: 1, unit: 'GRAM', wastePercent: 0 }],
+    )
+    setError('')
+  }
+
+  const handleSave = async (event: FormEvent) => {
     event.preventDefault()
     if (!canWrite || saving) return
     const validItems = items.filter((item) => item.materialProductId > 0)
@@ -101,13 +129,21 @@ export function BomRecipesTab({
     }
     setSaving(true)
     try {
-      await apiPost('/boms', {
-        productId: Number(productId),
-        name: name.trim() || t('boms.defaultName'),
-        isActive: true,
-        items: validItems,
-      })
-      setName(t('boms.defaultName'))
+      if (editingBom) {
+        await apiPatch(`/boms/${editingBom.id}`, {
+          name: name.trim() || t('boms.defaultName'),
+          items: validItems,
+        })
+        setSuccessNotice(t('boms.updated'))
+      } else {
+        await apiPost('/boms', {
+          productId: Number(productId),
+          name: name.trim() || t('boms.defaultName'),
+          isActive: true,
+          items: validItems,
+        })
+      }
+      resetForm()
       await load()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t('boms.saveError'))
@@ -147,6 +183,7 @@ export function BomRecipesTab({
 
   return (
     <>
+    <SuccessToast message={successNotice} onDismiss={() => setSuccessNotice('')} />
     <section className="panel panel--full">
       <div className="panel__header">
         <h2>{t('boms.title')}</h2>
@@ -158,10 +195,20 @@ export function BomRecipesTab({
         </p>
       )}
       {canWrite && (
-        <form className="demo-form" onSubmit={(e) => void handleCreate(e)} style={{ padding: 16 }}>
+        <form className="demo-form" onSubmit={(e) => void handleSave(e)} style={{ padding: 16 }}>
+          {editingBom && (
+            <p className="panel__meta" style={{ marginBottom: 8 }}>
+              {t('boms.editing', { name: editingBom.name })}
+            </p>
+          )}
           <label>
             {t('boms.finishedProduct')}
-            <select required value={productId} onChange={(e) => setProductId(e.target.value)}>
+            <select
+              required
+              value={productId}
+              onChange={(e) => setProductId(e.target.value)}
+              disabled={Boolean(editingBom)}
+            >
               <option value="">{t('boms.select')}</option>
               {products.map((product) => (
                 <option key={product.id} value={product.id}>
@@ -250,8 +297,17 @@ export function BomRecipesTab({
             >
               + {t('boms.addMaterial')}
             </button>
+            {editingBom && (
+              <button type="button" className="btn btn--ghost" onClick={resetForm} disabled={saving}>
+                {t('boms.cancelEdit')}
+              </button>
+            )}
             <button type="submit" className="btn btn--primary" disabled={saving}>
-              {saving ? t('boms.saving') : t('boms.saveActive')}
+              {saving
+                ? t('boms.saving')
+                : editingBom
+                  ? t('boms.saveChanges')
+                  : t('boms.saveActive')}
             </button>
           </div>
         </form>
@@ -289,6 +345,14 @@ export function BomRecipesTab({
                 <td>{bom.isActive ? t('boms.active') : t('boms.inactive')}</td>
                 {canWrite && (
                   <td>
+                    <button
+                      type="button"
+                      className="btn btn--ghost"
+                      disabled={saving}
+                      onClick={() => openEdit(bom)}
+                    >
+                      {t('boms.edit')}
+                    </button>
                     {!bom.isActive && (
                       <button
                         type="button"

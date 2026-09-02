@@ -5,7 +5,7 @@ import { ModuleSummary } from '../components/ModuleSummary'
 import { ModuleToolbar } from '../components/ModuleToolbar'
 import { StatusBadge } from '../components/StatusBadge'
 import { SuccessToast } from '../components/Toast'
-import { ApiError, apiGet, apiRequest } from '../data/api'
+import { ApiError, apiDelete, apiGet, apiPatch, apiRequest } from '../data/api'
 import { useI18n } from '../i18n/I18nProvider'
 import { OPEN_CUSTOMER_REQUEST_CREATE_FLAG } from './customerRequestActions'
 
@@ -73,6 +73,8 @@ export function CustomerRequestsModule({
   const [formError, setFormError] = useState('')
   const [loading, setLoading] = useState(true)
   const [formOpen, setFormOpen] = useState(false)
+  const [editing, setEditing] = useState<CustomerRequest | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<CustomerRequest | null>(null)
   const [saving, setSaving] = useState(false)
   const [convertId, setConvertId] = useState<number | null>(null)
 
@@ -142,6 +144,7 @@ export function CustomerRequestsModule({
   }
 
   const resetForm = () => {
+    setEditing(null)
     setCustomerId('')
     setContactDate(todayYmd())
     setContactMethod('PHONE')
@@ -193,7 +196,29 @@ export function CustomerRequestsModule({
     return () => window.clearTimeout(timeoutId)
   }, [canWrite])
 
-  const handleCreate = async (event: FormEvent) => {
+  const openEdit = (row: CustomerRequest) => {
+    setEditing(row)
+    setCustomerId(String(row.customerId))
+    setContactDate(row.contactDate)
+    setContactMethod(row.contactMethod)
+    setRequestText(row.requestText)
+    setRequestedProduct(row.requestedProduct ?? '')
+    setWidthCm(row.widthCm != null ? String(row.widthCm) : '')
+    setColorCount(row.colorCount != null ? String(row.colorCount) : '')
+    setEstimatedQuantity(
+      row.estimatedQuantity != null ? String(row.estimatedQuantity) : '',
+    )
+    setUnit(row.unit ?? 'METER')
+    setRequestedDeliveryDate(row.requestedDeliveryDate ?? '')
+    setQuotedUnitPrice(
+      row.quotedUnitPrice != null ? String(row.quotedUnitPrice) : '',
+    )
+    setNotes(row.notes ?? '')
+    setFormError('')
+    setFormOpen(true)
+  }
+
+  const handleSave = async (event: FormEvent) => {
     event.preventDefault()
     if (!canWrite || saving) return
     if (!customerId) {
@@ -209,35 +234,59 @@ export function CustomerRequestsModule({
     setError('')
     setSuccessNotice('')
     try {
-      await apiRequest('/customer-requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerId: Number(customerId),
-          contactDate,
-          contactMethod,
-          requestText: requestText.trim(),
-          requestedProduct: requestedProduct.trim() || undefined,
-          widthCm: widthCm ? Number(widthCm) : undefined,
-          colorCount: colorCount ? Number(colorCount) : undefined,
-          estimatedQuantity: estimatedQuantity
-            ? Number(estimatedQuantity)
-            : undefined,
-          unit: estimatedQuantity ? unit : undefined,
-          requestedDeliveryDate: requestedDeliveryDate || undefined,
-          quotedUnitPrice: quotedUnitPrice
-            ? Number(quotedUnitPrice)
-            : undefined,
-          notes: notes.trim() || undefined,
-        }),
-      })
+      const payload = {
+        customerId: Number(customerId),
+        contactDate,
+        contactMethod,
+        requestText: requestText.trim(),
+        requestedProduct: requestedProduct.trim() || undefined,
+        widthCm: widthCm ? Number(widthCm) : undefined,
+        colorCount: colorCount ? Number(colorCount) : undefined,
+        estimatedQuantity: estimatedQuantity
+          ? Number(estimatedQuantity)
+          : undefined,
+        unit: estimatedQuantity ? unit : undefined,
+        requestedDeliveryDate: requestedDeliveryDate || undefined,
+        quotedUnitPrice: quotedUnitPrice
+          ? Number(quotedUnitPrice)
+          : undefined,
+        notes: notes.trim() || undefined,
+      }
+      if (editing) {
+        await apiPatch(`/customer-requests/${editing.id}`, payload)
+        setSuccessNotice(t('requests.updated'))
+      } else {
+        await apiRequest('/customer-requests', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        setSuccessNotice(t('requests.created'))
+      }
       setFormOpen(false)
       resetForm()
-      setSuccessNotice(t('requests.created'))
       await load()
     } catch (err) {
       setFormError(
         err instanceof ApiError ? err.message : t('requests.saveError'),
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!deleteTarget || !canWrite || saving) return
+    setSaving(true)
+    setError('')
+    try {
+      await apiDelete(`/customer-requests/${deleteTarget.id}`)
+      setDeleteTarget(null)
+      await load()
+      setSuccessNotice(t('requests.deleted'))
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : t('requests.deleteError'),
       )
     } finally {
       setSaving(false)
@@ -419,6 +468,26 @@ export function CustomerRequestsModule({
                           <button
                             type="button"
                             className="btn btn--ghost"
+                            onClick={() => openEdit(row)}
+                          >
+                            {t('requests.edit')}
+                          </button>
+                        )}
+                      {canWrite && row.status !== 'CONVERTED_TO_ORDER' && (
+                        <button
+                          type="button"
+                          className="btn btn--ghost"
+                          onClick={() => setDeleteTarget(row)}
+                        >
+                          {t('requests.delete')}
+                        </button>
+                      )}
+                      {canWrite &&
+                        row.status !== 'CONVERTED_TO_ORDER' &&
+                        row.status !== 'CANCELLED' && (
+                          <button
+                            type="button"
+                            className="btn btn--ghost"
                             title={
                               canConvertRequest(row)
                                 ? t('requests.createDraft')
@@ -454,13 +523,14 @@ export function CustomerRequestsModule({
 
       <Modal
         open={formOpen}
-        title={t('requests.newTitle')}
+        title={editing ? t('requests.editTitle') : t('requests.newTitle')}
         onClose={() => {
           setFormOpen(false)
+          setEditing(null)
           setFormError('')
         }}
       >
-        <form className="demo-form" onSubmit={(e) => void handleCreate(e)}>
+        <form className="demo-form" onSubmit={(e) => void handleSave(e)}>
           <p className="empty-state" style={{ marginBottom: 4 }}>
             {t('requests.formWorkflow')}
           </p>
@@ -662,6 +732,20 @@ export function CustomerRequestsModule({
         confirmLabel={t('requests.confirmConvert')}
         onCancel={() => setConvertId(null)}
         onConfirm={() => void handleConvert()}
+      />
+      <ConfirmDialog
+        open={deleteTarget != null}
+        title={t('requests.deleteTitle')}
+        message={
+          deleteTarget
+            ? t('requests.deleteConfirm', {
+                name: deleteTarget.customerName ?? t('requests.customer'),
+              })
+            : ''
+        }
+        confirmLabel={t('requests.delete')}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => void handleDelete()}
       />
     </>
   )

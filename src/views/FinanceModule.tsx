@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { Modal } from '../components/Modal'
 import { ModuleSummary } from '../components/ModuleSummary'
 import { ModuleToolbar } from '../components/ModuleToolbar'
+import { SuccessToast } from '../components/Toast'
 import { ApiError, apiGet, apiPost } from '../data/api'
 import { useI18n } from '../i18n/I18nProvider'
 import { FinanceDebtsTab } from './FinanceDebtsTab'
@@ -16,6 +17,7 @@ interface CashTransaction {
   debit: Amount
   credit: Amount
   balance: Amount | null
+  reversesId: number | null
   cashAccount: {
     code: string
     name: string
@@ -110,6 +112,10 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
   const [saving, setSaving] = useState(false)
   const [cashOpen, setCashOpen] = useState(false)
   const [collectionOpen, setCollectionOpen] = useState(false)
+  const [successNotice, setSuccessNotice] = useState('')
+  const [reverseTarget, setReverseTarget] = useState<CashTransaction | null>(null)
+  const [reverseReason, setReverseReason] = useState('')
+  const [reverseError, setReverseError] = useState('')
 
   const [cashType, setCashType] = useState<CashType>('CASH_IN')
   const [cashAmount, setCashAmount] = useState('')
@@ -330,6 +336,30 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
     }
   }
 
+  const handleReverse = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!canWrite || !reverseTarget || saving) return
+    if (reverseReason.trim().length < 3) {
+      setReverseError(t('finance.reverseReason'))
+      return
+    }
+    setSaving(true)
+    setReverseError('')
+    try {
+      await apiPost(`/cash/transactions/${reverseTarget.id}/reverse`, {
+        reason: reverseReason.trim(),
+      })
+      setReverseTarget(null)
+      setReverseReason('')
+      setSuccessNotice(t('finance.reverseSaved'))
+      await load()
+    } catch (err) {
+      setReverseError(err instanceof ApiError ? err.message : t('finance.reverseError'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const filteredCash = useMemo(() => {
     const query = search.toLocaleLowerCase(locale)
     return transactions.filter((transaction) =>
@@ -364,6 +394,8 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
         <button type="button" className={tab === 'expenses' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('expenses')}>{t('finance.tab.expenses')}</button>
         <button type="button" className={tab === 'ledger' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('ledger')}>{t('finance.tab.ledger')}</button>
       </div>
+
+      <SuccessToast message={successNotice} onDismiss={() => setSuccessNotice('')} />
 
       {tab !== 'debts' && tab !== 'cashflow' && (
       <ModuleSummary
@@ -587,26 +619,45 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
                   <th>{t('finance.debitDzd')}</th>
                   <th>{t('finance.creditDzd')}</th>
                   <th>{t('finance.balanceDzd')}</th>
+                  {canWrite && <th>{t('finance.action')}</th>}
                 </tr>
               </thead>
               <tbody>
-                {filteredCash.map((t) => (
-                  <tr key={t.id}>
+                {filteredCash.map((row) => (
+                  <tr key={row.id}>
                     <td className="date-cell">
-                      {formatDate(t.transactionAt)}
+                      {formatDate(row.transactionAt)}
                     </td>
-                    <td>{t.description}</td>
-                    <td>{t.cashAccount?.name ?? '—'}</td>
-                    <td className="amount-cell">{formatAmount(t.debit)}</td>
-                    <td className="amount-cell">{formatAmount(t.credit)}</td>
+                    <td>{row.description}</td>
+                    <td>{row.cashAccount?.name ?? '—'}</td>
+                    <td className="amount-cell">{formatAmount(row.debit)}</td>
+                    <td className="amount-cell">{formatAmount(row.credit)}</td>
                     <td className="amount-cell">
-                      {t.balance === null ? '—' : formatAmount(t.balance)}
+                      {row.balance === null ? '—' : formatAmount(row.balance)}
                     </td>
+                    {canWrite && (
+                      <td>
+                        {!row.reversesId && (
+                          <button
+                            type="button"
+                            className="btn btn--ghost"
+                            disabled={saving}
+                            onClick={() => {
+                              setReverseTarget(row)
+                              setReverseReason('')
+                              setReverseError('')
+                            }}
+                          >
+                            {t('finance.reverse')}
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {!loading && !error && filteredCash.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="empty-cell">
+                    <td colSpan={canWrite ? 7 : 6} className="empty-cell">
                       {t('finance.noCashMovements')}
                     </td>
                   </tr>
@@ -872,6 +923,57 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
               disabled={saving || customers.length === 0}
             >
               {saving ? t('finance.saving') : t('common.save')}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={Boolean(reverseTarget)}
+        title={t('finance.reverseTitle')}
+        onClose={() => {
+          if (saving) return
+          setReverseTarget(null)
+          setReverseReason('')
+          setReverseError('')
+        }}
+      >
+        <form className="demo-form" onSubmit={(e) => void handleReverse(e)}>
+          {reverseTarget && (
+            <p className="panel__meta" style={{ marginBottom: 8 }}>
+              {reverseTarget.description}
+            </p>
+          )}
+          <label>
+            {t('finance.reverseReason')}
+            <textarea
+              rows={3}
+              required
+              minLength={3}
+              value={reverseReason}
+              onChange={(e) => setReverseReason(e.target.value)}
+            />
+          </label>
+          {reverseError && (
+            <p className="demo-notice" role="alert">
+              {reverseError}
+            </p>
+          )}
+          <div className="form-actions">
+            <button
+              type="button"
+              className="btn btn--ghost"
+              disabled={saving}
+              onClick={() => {
+                setReverseTarget(null)
+                setReverseReason('')
+                setReverseError('')
+              }}
+            >
+              {t('common.cancel')}
+            </button>
+            <button type="submit" className="btn btn--primary" disabled={saving}>
+              {saving ? t('finance.saving') : t('finance.reverse')}
             </button>
           </div>
         </form>

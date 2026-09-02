@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
-const backendTarget = process.env.VELORA_API_TARGET ?? 'http://localhost:3001'
+const backendTarget = process.env.VELORA_API_TARGET ?? 'http://127.0.0.1:3001'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -47,7 +47,10 @@ export default defineConfig({
         ],
       },
       workbox: {
+        cacheId: 'vexor-production',
+        cleanupOutdatedCaches: true,
         navigateFallback: 'index.html',
+        navigateFallbackDenylist: [/^\/api(?:\/|$)/],
         globPatterns: ['**/*.{js,css,html,svg,png,ico,webp,woff2}'],
         globIgnores: [
           '**/trikomex-textile-operations-hero.png',

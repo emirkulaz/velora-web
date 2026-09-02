@@ -10,6 +10,7 @@ import {
   canWriteFinance,
   canWriteOrders,
   canWriteProduction,
+  canWriteWorkforce,
   canWriteProducts,
   canWriteStock,
   canManageUsers,
@@ -89,7 +90,7 @@ export function renderModule(
     case 'financeAi':
       return <FinanceAiModule />
     case 'users':
-      return <UsersModule />
+      return <UsersModule canWrite={canWriteWorkforce(role)} />
     case 'userManagement':
       return canManageUsers(role)
         ? <UserManagementModule />

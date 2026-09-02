@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Modal } from '../components/Modal'
-import { ApiError, apiGet, apiPost } from '../data/api'
+import { SuccessToast } from '../components/Toast'
+import { ApiError, apiGet, apiPatch, apiPost } from '../data/api'
 import { algiersYmd } from '../data/dates'
 import { useI18n } from '../i18n/I18nProvider'
 
@@ -49,6 +50,40 @@ type DebtDetail = DebtItem & {
 
 type CashAccount = { id: number; code: string; name: string }
 
+type Supplier = {
+  id: number
+  name: string
+  contactName: string | null
+  phone: string | null
+  email: string | null
+  address: string | null
+  paymentTerms: string | null
+  notes: string | null
+  isActive: boolean
+}
+
+type SupplierForm = {
+  name: string
+  contactName: string
+  phone: string
+  email: string
+  address: string
+  paymentTerms: string
+  notes: string
+  isActive: boolean
+}
+
+const EMPTY_SUPPLIER: SupplierForm = {
+  name: '',
+  contactName: '',
+  phone: '',
+  email: '',
+  address: '',
+  paymentTerms: '',
+  notes: '',
+  isActive: true,
+}
+
 const FILTERS: Array<'ALL' | DebtStatus> = ['ALL', 'OPEN', 'PARTIALLY_PAID', 'DUE_SOON', 'OVERDUE', 'PAID']
 
 export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
@@ -78,6 +113,20 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
   const [accounts, setAccounts] = useState<CashAccount[]>([])
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [supplierOpen, setSupplierOpen] = useState(false)
+  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null)
+  const [supplierForm, setSupplierForm] = useState<SupplierForm>(EMPTY_SUPPLIER)
+  const [successNotice, setSuccessNotice] = useState('')
+
+  const loadSuppliers = useCallback(async () => {
+    try {
+      const rows = await apiGet<Supplier[]>('/suppliers')
+      setSuppliers(rows)
+    } catch {
+      setSuppliers([])
+    }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -117,9 +166,12 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
   }, [t])
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 0)
+    const timer = window.setTimeout(() => {
+      void load()
+      void loadSuppliers()
+    }, 0)
     return () => window.clearTimeout(timer)
-  }, [load])
+  }, [load, loadSuppliers])
 
   useEffect(() => {
     if (loading) return
@@ -167,6 +219,93 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
     setPayAccountId('')
     setFormError('')
     setPayOpen(true)
+  }
+
+  const openNewSupplier = () => {
+    setEditingSupplier(null)
+    setSupplierForm(EMPTY_SUPPLIER)
+    setFormError('')
+    setSupplierOpen(true)
+  }
+
+  const openEditSupplier = (supplier: Supplier) => {
+    setEditingSupplier(supplier)
+    setSupplierForm({
+      name: supplier.name,
+      contactName: supplier.contactName ?? '',
+      phone: supplier.phone ?? '',
+      email: supplier.email ?? '',
+      address: supplier.address ?? '',
+      paymentTerms: supplier.paymentTerms ?? '',
+      notes: supplier.notes ?? '',
+      isActive: supplier.isActive,
+    })
+    setFormError('')
+    setSupplierOpen(true)
+  }
+
+  const openEditSupplierByDebt = (row: DebtItem) => {
+    const match = suppliers.find((s) => s.id === row.supplierId)
+    if (match) {
+      openEditSupplier(match)
+      return
+    }
+    setEditingSupplier({
+      id: row.supplierId,
+      name: row.supplierName,
+      contactName: null,
+      phone: null,
+      email: null,
+      address: null,
+      paymentTerms: null,
+      notes: null,
+      isActive: true,
+    })
+    setSupplierForm({
+      ...EMPTY_SUPPLIER,
+      name: row.supplierName,
+    })
+    setFormError('')
+    setSupplierOpen(true)
+  }
+
+  const handleSupplierSave = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!canWrite || saving) return
+    if (supplierForm.name.trim().length < 2) {
+      setFormError(t('debt.supplierSaveError'))
+      return
+    }
+    setSaving(true)
+    setFormError('')
+    const payload = {
+      name: supplierForm.name.trim(),
+      contactName: supplierForm.contactName.trim() || undefined,
+      phone: supplierForm.phone.trim() || undefined,
+      email: supplierForm.email.trim() || undefined,
+      address: supplierForm.address.trim() || undefined,
+      paymentTerms: supplierForm.paymentTerms.trim() || undefined,
+      notes: supplierForm.notes.trim() || undefined,
+      isActive: supplierForm.isActive,
+    }
+    try {
+      if (editingSupplier) {
+        await apiPatch(`/suppliers/${editingSupplier.id}`, payload)
+        setSuccessNotice(t('debt.supplierUpdated'))
+      } else {
+        await apiPost('/suppliers', payload)
+        setSuccessNotice(t('debt.supplierSaved'))
+      }
+      setSupplierOpen(false)
+      setEditingSupplier(null)
+      setSupplierForm(EMPTY_SUPPLIER)
+      await loadSuppliers()
+      await load()
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : t('debt.supplierSaveError'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handlePay = async (event: FormEvent) => {
@@ -217,6 +356,62 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
 
   return (
     <>
+      <SuccessToast message={successNotice} onDismiss={() => setSuccessNotice('')} />
+
+      <section className="panel panel--full">
+        <div className="panel__header">
+          <h2>{t('debt.supplier')}</h2>
+          {canWrite && (
+            <button type="button" className="btn btn--primary" onClick={openNewSupplier}>
+              + {t('debt.newSupplier')}
+            </button>
+          )}
+        </div>
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>{t('debt.supplier')}</th>
+                <th>{t('debt.phone')}</th>
+                <th>{t('debt.email')}</th>
+                <th>{t('debt.paymentTerms')}</th>
+                <th>{t('debt.active')}</th>
+                {canWrite && <th>{t('debt.action')}</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {suppliers.map((supplier) => (
+                <tr key={supplier.id}>
+                  <td>{supplier.name}</td>
+                  <td>{supplier.phone ?? '—'}</td>
+                  <td>{supplier.email ?? '—'}</td>
+                  <td>{supplier.paymentTerms ?? '—'}</td>
+                  <td>{supplier.isActive ? t('debt.active') : '—'}</td>
+                  {canWrite && (
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn--ghost"
+                        onClick={() => openEditSupplier(supplier)}
+                      >
+                        {t('debt.editSupplier')}
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+              {suppliers.length === 0 && (
+                <tr>
+                  <td colSpan={canWrite ? 6 : 5} className="empty-cell">
+                    {t('debt.empty')}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section className="panel panel--full">
         <div className="panel__header">
           <h2>{t('debt.title')}</h2>
@@ -355,15 +550,24 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
                   <td className="date-cell">{debtDate(row.lastMovementAt)}</td>
                   {canWrite && (
                     <td>
-                      {row.remaining > 0 && (
+                      <div className="form-actions" style={{ justifyContent: 'flex-start' }}>
                         <button
                           type="button"
-                          className="btn btn--primary"
-                          onClick={() => openPay(row)}
+                          className="btn btn--ghost"
+                          onClick={() => openEditSupplierByDebt(row)}
                         >
-                          {t('debt.pay')}
+                          {t('debt.editSupplier')}
                         </button>
-                      )}
+                        {row.remaining > 0 && (
+                          <button
+                            type="button"
+                            className="btn btn--primary"
+                            onClick={() => openPay(row)}
+                          >
+                            {t('debt.pay')}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   )}
                 </tr>
@@ -454,6 +658,103 @@ export function FinanceDebtsTab({ canWrite = false }: { canWrite?: boolean }) {
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        open={supplierOpen}
+        title={editingSupplier ? t('debt.editSupplier') : t('debt.newSupplier')}
+        onClose={() => {
+          if (saving) return
+          setSupplierOpen(false)
+          setEditingSupplier(null)
+          setFormError('')
+        }}
+      >
+        <form className="demo-form" onSubmit={(event) => void handleSupplierSave(event)}>
+          <label>
+            {t('debt.supplier')}
+            <input
+              required
+              minLength={2}
+              value={supplierForm.name}
+              onChange={(e) => setSupplierForm((prev) => ({ ...prev, name: e.target.value }))}
+            />
+          </label>
+          <label>
+            {t('debt.contactName')}
+            <input
+              value={supplierForm.contactName}
+              onChange={(e) => setSupplierForm((prev) => ({ ...prev, contactName: e.target.value }))}
+            />
+          </label>
+          <label>
+            {t('debt.phone')}
+            <input
+              value={supplierForm.phone}
+              onChange={(e) => setSupplierForm((prev) => ({ ...prev, phone: e.target.value }))}
+            />
+          </label>
+          <label>
+            {t('debt.email')}
+            <input
+              type="email"
+              value={supplierForm.email}
+              onChange={(e) => setSupplierForm((prev) => ({ ...prev, email: e.target.value }))}
+            />
+          </label>
+          <label>
+            {t('debt.address')}
+            <textarea
+              rows={2}
+              value={supplierForm.address}
+              onChange={(e) => setSupplierForm((prev) => ({ ...prev, address: e.target.value }))}
+            />
+          </label>
+          <label>
+            {t('debt.paymentTerms')}
+            <input
+              value={supplierForm.paymentTerms}
+              onChange={(e) => setSupplierForm((prev) => ({ ...prev, paymentTerms: e.target.value }))}
+            />
+          </label>
+          <label>
+            {t('debt.notes')}
+            <textarea
+              rows={2}
+              value={supplierForm.notes}
+              onChange={(e) => setSupplierForm((prev) => ({ ...prev, notes: e.target.value }))}
+            />
+          </label>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={supplierForm.isActive}
+              onChange={(e) => setSupplierForm((prev) => ({ ...prev, isActive: e.target.checked }))}
+            />
+            {t('debt.active')}
+          </label>
+          {formError && (
+            <p className="demo-notice" role="alert">
+              {formError}
+            </p>
+          )}
+          <div className="form-actions">
+            <button
+              type="button"
+              className="btn btn--ghost"
+              disabled={saving}
+              onClick={() => {
+                setSupplierOpen(false)
+                setEditingSupplier(null)
+              }}
+            >
+              {t('common.cancel')}
+            </button>
+            <button type="submit" className="btn btn--primary" disabled={saving}>
+              {saving ? t('debt.saving') : t('common.save')}
+            </button>
+          </div>
+        </form>
       </Modal>
 
       <Modal

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { Modal } from '../components/Modal'
 import { ModuleSummary } from '../components/ModuleSummary'
 import { ModuleToolbar } from '../components/ModuleToolbar'
 import { SuccessToast } from '../components/Toast'
-import { ApiError, apiGet, apiPost } from '../data/api'
+import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from '../data/api'
 import {
   isTextileCompany,
   type CompanyPresentation,
@@ -33,7 +34,7 @@ interface StockBalance {
   isCritical?: boolean
   source: string
   packageCount: number
-  warehouses: Array<{ code: string; name: string; quantity: number; packageCount: number }>
+  warehouses: Array<{ id: number; code: string; name: string; quantity: number; packageCount: number }>
 }
 
 type ProductOption = {
@@ -47,6 +48,7 @@ type WarehouseOption = {
   id: number
   code: string
   name: string
+  address?: string | null
 }
 
 type StockAction = 'INBOUND' | 'OUTBOUND'
@@ -86,6 +88,8 @@ export function InventoryModule({
   const [saving, setSaving] = useState(false)
   const [formOpen, setFormOpen] = useState(false)
   const [warehouseFormOpen, setWarehouseFormOpen] = useState(false)
+  const [editingWarehouse, setEditingWarehouse] = useState<WarehouseOption | null>(null)
+  const [deleteWarehouse, setDeleteWarehouse] = useState<WarehouseOption | null>(null)
   const [successNotice, setSuccessNotice] = useState('')
 
   const [action, setAction] = useState<StockAction>('INBOUND')
@@ -100,6 +104,11 @@ export function InventoryModule({
   const [warehouseCode, setWarehouseCode] = useState('')
   const [warehouseName, setWarehouseName] = useState('')
   const [warehouseAddress, setWarehouseAddress] = useState('')
+  const [adjustOpen, setAdjustOpen] = useState(false)
+  const [adjustTarget, setAdjustTarget] = useState<StockBalance | null>(null)
+  const [adjustWarehouseId, setAdjustWarehouseId] = useState('')
+  const [adjustTargetQty, setAdjustTargetQty] = useState('')
+  const [adjustNote, setAdjustNote] = useState('')
 
   const loadBalances = useCallback(async () => {
     setLoading(true)
@@ -133,6 +142,7 @@ export function InventoryModule({
           id: w.id,
           code: w.code,
           name: w.name,
+          address: w.address ?? null,
         })),
       )
     } catch {
@@ -234,25 +244,90 @@ export function InventoryModule({
     }
   }
 
-  const handleWarehouseCreate = async (event: FormEvent) => {
+  const handleWarehouseSave = async (event: FormEvent) => {
     event.preventDefault()
     if (!canManageWarehouses || saving) return
     setSaving(true)
     setFormError('')
     try {
-      await apiPost('/warehouses', {
+      const payload = {
         code: warehouseCode.trim(),
         name: warehouseName.trim(),
         address: warehouseAddress.trim() || undefined,
-      })
+      }
+      if (editingWarehouse) {
+        await apiPatch(`/warehouses/${editingWarehouse.id}`, payload)
+        setSuccessNotice(t('inventory.warehouseUpdated'))
+      } else {
+        await apiPost('/warehouses', payload)
+        setSuccessNotice(t('inventory.warehouseSaved'))
+      }
       setWarehouseFormOpen(false)
+      setEditingWarehouse(null)
       setWarehouseCode('')
       setWarehouseName('')
       setWarehouseAddress('')
       await loadSelectOptions()
-      setSuccessNotice(t('inventory.warehouseSaved'))
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : t('inventory.warehouseSaveError'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleWarehouseDelete = async () => {
+    if (!deleteWarehouse || !canManageWarehouses || saving) return
+    setSaving(true)
+    setFormError('')
+    try {
+      await apiDelete(`/warehouses/${deleteWarehouse.id}`)
+      setDeleteWarehouse(null)
+      await loadSelectOptions()
+      setSuccessNotice(t('inventory.warehouseDeleted'))
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t('inventory.warehouseDeleteError'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const openAdjust = (item: StockBalance) => {
+    setAdjustTarget(item)
+    const first = item.warehouses[0]
+    setAdjustWarehouseId(first ? String(first.id) : '')
+    setAdjustTargetQty(first ? String(first.quantity) : '')
+    setAdjustNote('')
+    setFormError('')
+    setAdjustOpen(true)
+  }
+
+  const handleAdjust = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!canWrite || !adjustTarget || saving) return
+    if (!adjustWarehouseId) {
+      setFormError(t('inventory.selectProductWarehouse'))
+      return
+    }
+    const targetQuantity = Number(adjustTargetQty)
+    if (!Number.isFinite(targetQuantity) || targetQuantity < 0) {
+      setFormError(t('inventory.invalidQuantity'))
+      return
+    }
+    setSaving(true)
+    setFormError('')
+    try {
+      await apiPost('/stock/adjustments', {
+        productId: adjustTarget.productId,
+        warehouseId: Number(adjustWarehouseId),
+        targetQuantity,
+        note: adjustNote.trim() || undefined,
+      })
+      setAdjustOpen(false)
+      setAdjustTarget(null)
+      await loadBalances()
+      setSuccessNotice(t('inventory.adjustSaved'))
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : t('inventory.adjustError'))
     } finally {
       setSaving(false)
     }
@@ -420,6 +495,7 @@ export function InventoryModule({
                     <th>{t('inventory.criticalLevel')}</th>
                   </>
                 )}
+                {canWrite && <th>{t('inventory.actions')}</th>}
               </tr>
             </thead>
             <tbody>
@@ -471,11 +547,23 @@ export function InventoryModule({
                       <td>{formatQty(critical)}</td>
                     </>
                   )}
+                  {canWrite && (
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn--ghost"
+                        disabled={saving || item.warehouses.length === 0}
+                        onClick={() => openAdjust(item)}
+                      >
+                        {t('inventory.adjust')}
+                      </button>
+                    </td>
+                  )}
                 </tr>
               )})}
               {!loading && !error && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={isYarnInventory ? 7 : textile ? 10 : 8} className="empty-cell">
+                  <td colSpan={(isYarnInventory ? 7 : textile ? 10 : 8) + (canWrite ? 1 : 0)} className="empty-cell">
                     {t('inventory.noSearchResult')}
                   </td>
                 </tr>
@@ -495,6 +583,7 @@ export function InventoryModule({
                 type="button"
                 className="btn btn--primary"
                 onClick={() => {
+                  setEditingWarehouse(null)
                   setWarehouseCode('')
                   setWarehouseName('')
                   setWarehouseAddress('')
@@ -513,6 +602,7 @@ export function InventoryModule({
               <tr>
                 <th>{t('inventory.code')}</th>
                 <th>{t('inventory.warehouse')}</th>
+                {canManageWarehouses && <th>{t('inventory.actions')}</th>}
               </tr>
             </thead>
             <tbody>
@@ -520,11 +610,38 @@ export function InventoryModule({
                 <tr key={warehouse.id}>
                   <td className="mono">{warehouse.code}</td>
                   <td>{warehouse.name}</td>
+                  {canManageWarehouses && (
+                    <td>
+                      <div className="form-actions" style={{ justifyContent: 'flex-start' }}>
+                        <button
+                          type="button"
+                          className="btn btn--ghost"
+                          onClick={() => {
+                            setEditingWarehouse(warehouse)
+                            setWarehouseCode(warehouse.code)
+                            setWarehouseName(warehouse.name)
+                            setWarehouseAddress(warehouse.address ?? '')
+                            setFormError('')
+                            setWarehouseFormOpen(true)
+                          }}
+                        >
+                          {t('inventory.edit')}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn--ghost"
+                          onClick={() => setDeleteWarehouse(warehouse)}
+                        >
+                          {t('inventory.delete')}
+                        </button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
               {warehouses.length === 0 && (
                 <tr>
-                  <td colSpan={2} className="empty-cell">
+                  <td colSpan={canManageWarehouses ? 3 : 2} className="empty-cell">
                     {t('inventory.noWarehouses')}
                   </td>
                 </tr>
@@ -689,13 +806,14 @@ export function InventoryModule({
 
       <Modal
         open={warehouseFormOpen}
-        title={t('inventory.newWarehouse')}
+        title={editingWarehouse ? t('inventory.editWarehouse') : t('inventory.newWarehouse')}
         onClose={() => {
           setWarehouseFormOpen(false)
+          setEditingWarehouse(null)
           setFormError('')
         }}
       >
-        <form className="demo-form" onSubmit={(event) => void handleWarehouseCreate(event)}>
+        <form className="demo-form" onSubmit={(event) => void handleWarehouseSave(event)}>
           <label>
             {t('inventory.warehouseCode')}
             <input
@@ -730,7 +848,10 @@ export function InventoryModule({
             <button
               type="button"
               className="btn btn--ghost"
-              onClick={() => setWarehouseFormOpen(false)}
+              onClick={() => {
+                setWarehouseFormOpen(false)
+                setEditingWarehouse(null)
+              }}
             >
               {t('common.cancel')}
             </button>
@@ -740,6 +861,109 @@ export function InventoryModule({
           </div>
         </form>
       </Modal>
+      <Modal
+        open={adjustOpen}
+        title={t('inventory.adjustTitle')}
+        onClose={() => {
+          if (saving) return
+          setAdjustOpen(false)
+          setAdjustTarget(null)
+          setFormError('')
+        }}
+      >
+        <form className="demo-form" onSubmit={(e) => void handleAdjust(e)}>
+          {adjustTarget && (
+            <p className="panel__meta" style={{ marginBottom: 8 }}>
+              {adjustTarget.code} — {adjustTarget.name}
+            </p>
+          )}
+          <label>
+            {t('inventory.warehouse')}
+            <select
+              required
+              dir="ltr"
+              value={adjustWarehouseId}
+              onChange={(e) => {
+                const nextId = e.target.value
+                setAdjustWarehouseId(nextId)
+                const wh = adjustTarget?.warehouses.find((w) => String(w.id) === nextId)
+                if (wh) setAdjustTargetQty(String(wh.quantity))
+              }}
+            >
+              <option value="">{t('inventory.select')}</option>
+              {adjustTarget?.warehouses.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.code} — {w.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="panel__meta">
+            {t('inventory.currentWarehouseQty')}:{' '}
+            <strong dir="ltr">
+              {formatQty(
+                adjustTarget?.warehouses.find((w) => String(w.id) === adjustWarehouseId)?.quantity ?? 0,
+              )}
+            </strong>
+          </p>
+          <label>
+            {t('inventory.targetQuantity')}
+            <input
+              type="number"
+              min="0"
+              step="0.001"
+              required
+              dir="ltr"
+              value={adjustTargetQty}
+              onChange={(e) => setAdjustTargetQty(e.target.value)}
+            />
+          </label>
+          <label>
+            {t('inventory.adjustNote')}
+            <textarea
+              rows={2}
+              dir="ltr"
+              value={adjustNote}
+              onChange={(e) => setAdjustNote(e.target.value)}
+            />
+          </label>
+          {formError && (
+            <p className="demo-notice" role="alert">
+              {formError}
+            </p>
+          )}
+          <div className="form-actions">
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={() => {
+                setAdjustOpen(false)
+                setAdjustTarget(null)
+                setFormError('')
+              }}
+              disabled={saving}
+            >
+              {t('common.cancel')}
+            </button>
+            <button type="submit" className="btn btn--primary" disabled={saving}>
+              {saving ? t('inventory.saving') : t('common.save')}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmDialog
+        open={deleteWarehouse != null}
+        title={t('inventory.deleteWarehouseTitle')}
+        message={
+          deleteWarehouse
+            ? t('inventory.deleteWarehouseConfirm', { name: deleteWarehouse.name })
+            : ''
+        }
+        confirmLabel={t('inventory.delete')}
+        onCancel={() => setDeleteWarehouse(null)}
+        onConfirm={() => void handleWarehouseDelete()}
+      />
     </>
   )
 }

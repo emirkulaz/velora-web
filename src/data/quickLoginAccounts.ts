@@ -85,21 +85,6 @@ export function isQuickLoginEnabled(): boolean {
 export function getQuickLoginAccounts(): QuickLoginAccount[] {
 
   return [
-
-    readEnvAccount(
-
-      'trikomex-admin',
-
-      'TRIKOMEX Admin',
-
-      'VITE_DEMO_TRIKOMEX_EMAIL',
-
-      'VITE_DEMO_TRIKOMEX_PASSWORD',
-
-      '{id} · stabilizasyon',
-
-    ),
-
     readEnvAccount(
 
       'asma',

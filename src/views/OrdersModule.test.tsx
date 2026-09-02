@@ -7,6 +7,7 @@ const { apiGet } = vi.hoisted(() => ({ apiGet: vi.fn() }))
 vi.mock('../data/api', () => ({
   ApiError: class ApiError extends Error {},
   apiGet,
+  apiDelete: vi.fn(),
   apiPatch: vi.fn(),
   apiPost: vi.fn(),
   apiRequest: vi.fn(),
@@ -62,7 +63,7 @@ describe('OrdersModule localization', () => {
 
     expect(await screen.findByText('SO-2026-11')).toBeInTheDocument()
     expect(screen.getByText('Partially delivered')).toBeInTheDocument()
-    expect(screen.getByText('14/08/2026')).toBeInTheDocument()
+    expect(screen.getByText(/14\/08\/2026/)).toBeInTheDocument()
     expect(screen.getByText('50,000 DZD')).toBeInTheDocument()
     expect(screen.queryByText('PARTIALLY_DELIVERED')).not.toBeInTheDocument()
   })

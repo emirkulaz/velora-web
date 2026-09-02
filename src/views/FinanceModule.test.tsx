@@ -73,7 +73,7 @@ describe('FinanceModule localization', () => {
 
     expect(await screen.findByText('Customer collection')).toBeInTheDocument()
     expect(screen.getAllByText('49,390.00').length).toBeGreaterThan(0)
-    expect(screen.getByText('13/08/2026')).toBeInTheDocument()
+    expect(screen.getByText(/^13\/08\/2026/)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Customer ledgers' }))
     expect(await screen.findByText('Review required')).toBeInTheDocument()

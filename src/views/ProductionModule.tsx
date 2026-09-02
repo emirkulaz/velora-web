@@ -5,7 +5,7 @@ import { ModuleSummary } from '../components/ModuleSummary'
 import { ModuleToolbar } from '../components/ModuleToolbar'
 import { StatusBadge } from '../components/StatusBadge'
 import { SuccessToast } from '../components/Toast'
-import { ApiError, apiGet, apiPatch, apiPost } from '../data/api'
+import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from '../data/api'
 import type { CompanyPresentation } from '../data/companyBranding'
 import { algiersYmd } from '../data/dates'
 import { useI18n } from '../i18n/I18nProvider'
@@ -88,6 +88,8 @@ export function ProductionModule({
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [formOpen, setFormOpen] = useState(false)
+  const [editing, setEditing] = useState<ProductionOrder | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<ProductionOrder | null>(null)
   const [successNotice, setSuccessNotice] = useState('')
   const [productId, setProductId] = useState('')
   const [plannedQuantity, setPlannedQuantity] = useState('1')
@@ -169,6 +171,7 @@ export function ProductionModule({
   }, [orders])
 
   const resetForm = () => {
+    setEditing(null)
     setProductId('')
     setPlannedQuantity('1')
     setUnit('METER')
@@ -177,13 +180,36 @@ export function ProductionModule({
     setFormError('')
   }
 
-  const handleCreate = async (event: FormEvent) => {
+  const openEdit = (order: ProductionOrder) => {
+    setEditing(order)
+    setProductId(String(order.productId))
+    setPlannedQuantity(String(order.plannedQuantity))
+    setUnit(order.unit)
+    setDueDate(order.dueDate ?? '')
+    setNotes(order.notes ?? '')
+    setFormError('')
+    setFormOpen(true)
+  }
+
+  const handleSave = async (event: FormEvent) => {
     event.preventDefault()
     if (!canWrite || saving) return
     setSaving(true)
     setError('')
     setFormError('')
     try {
+      if (editing) {
+        await apiPatch(`/production-orders/${editing.id}`, {
+          plannedQuantity: Number(plannedQuantity),
+          dueDate: dueDate || null,
+          notes: notes.trim() || null,
+        })
+        setFormOpen(false)
+        resetForm()
+        await load()
+        setSuccessNotice(t('production.updated'))
+        return
+      }
       const created = await apiPost<ProductionOrder>('/production-orders', {
         productId: Number(productId),
         plannedQuantity: Number(plannedQuantity),
@@ -272,6 +298,23 @@ export function ProductionModule({
       setSuccessNotice(t('production.statusUpdated'))
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t('production.statusError'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!deleteTarget || !canWrite || saving) return
+    setSaving(true)
+    setError('')
+    try {
+      await apiDelete(`/production-orders/${deleteTarget.id}`)
+      if (detail?.id === deleteTarget.id) setDetail(null)
+      setDeleteTarget(null)
+      await load()
+      setSuccessNotice(t('production.deleted'))
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t('production.deleteError'))
     } finally {
       setSaving(false)
     }
@@ -437,6 +480,28 @@ export function ProductionModule({
                   {canWrite && (
                     <td>
                       <div className="form-actions" style={{ gap: 6 }}>
+                        {(order.status === 'PLANNED' ||
+                          order.status === 'IN_PROGRESS') && (
+                          <button
+                            type="button"
+                            className="btn btn--ghost"
+                            disabled={saving}
+                            onClick={() => openEdit(order)}
+                          >
+                            {t('production.edit')}
+                          </button>
+                        )}
+                        {order.status === 'PLANNED' &&
+                          order.completedQuantity === 0 && (
+                            <button
+                              type="button"
+                              className="btn btn--ghost"
+                              disabled={saving}
+                              onClick={() => setDeleteTarget(order)}
+                            >
+                              {t('production.delete')}
+                            </button>
+                          )}
                         {order.status === 'PLANNED' && (
                           <button
                             type="button"
@@ -494,13 +559,14 @@ export function ProductionModule({
 
       <Modal
         open={formOpen}
-        title={t('production.newTitle')}
+        title={editing ? t('production.editTitle') : t('production.newTitle')}
         onClose={() => {
           setFormOpen(false)
+          setEditing(null)
           setFormError('')
         }}
       >
-        <form className="demo-form" onSubmit={(e) => void handleCreate(e)}>
+        <form className="demo-form" onSubmit={(e) => void handleSave(e)}>
           {formError && (
             <p className="demo-notice" role="alert" style={{ margin: '0 0 12px' }}>
               {formError}
@@ -510,6 +576,7 @@ export function ProductionModule({
             {t('production.product')}
             <select
               required
+              disabled={editing != null}
               value={productId}
               onChange={(e) => {
                 setProductId(e.target.value)
@@ -540,6 +607,7 @@ export function ProductionModule({
             {t('production.unit')}
             <select
               value={unit}
+              disabled={editing != null}
               onChange={(e) =>
                 setUnit(e.target.value as 'METER' | 'PIECE' | 'KILOGRAM')
               }
@@ -605,6 +673,18 @@ export function ProductionModule({
           }
           setStatusTarget(null)
         }}
+      />
+      <ConfirmDialog
+        open={deleteTarget != null}
+        title={t('production.deleteTitle')}
+        message={
+          deleteTarget
+            ? t('production.deleteConfirm', { number: deleteTarget.orderNumber })
+            : ''
+        }
+        confirmLabel={t('production.delete')}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => void handleDelete()}
       />
 
       <Modal

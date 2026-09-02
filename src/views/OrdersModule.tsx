@@ -5,10 +5,11 @@ import { ModuleSummary } from '../components/ModuleSummary'
 import { ModuleToolbar } from '../components/ModuleToolbar'
 import { StatusBadge } from '../components/StatusBadge'
 import { SuccessToast } from '../components/Toast'
-import { ApiError, apiGet, apiPost, apiRequest } from '../data/api'
+import { ApiError, apiDelete, apiGet, apiPatch, apiPost, apiRequest } from '../data/api'
 import { algiersDatetimeLocal, algiersYmd } from '../data/dates'
 import { useI18n } from '../i18n/I18nProvider'
 import { OPEN_ORDER_CREATE_FLAG } from './orderActions'
+import { ProductInvoicesTab } from './ProductInvoicesTab'
 
 type CustomerOption = { id: number; name: string }
 type ProductOption = { id:number; code:string; name:string; unit:'METER'|'PIECE'|'KILOGRAM'; salePrice:number|null }
@@ -59,8 +60,26 @@ function toIsoDateTime(value: string): string {
   return parsed.toISOString()
 }
 
+function canEditOrder(status: string) {
+  return status !== 'CANCELLED'
+}
+
+function canDeleteOrder(status: string) {
+  return status === 'DRAFT'
+}
+
+function canCancelOrder(status: string) {
+  return (
+    status === 'DRAFT' ||
+    status === 'CONFIRMED' ||
+    status === 'IN_PRODUCTION' ||
+    status === 'READY'
+  )
+}
+
 export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
   const { locale, t, formatCurrency, formatDate, formatNumber } = useI18n()
+  const [moduleTab, setModuleTab] = useState<'orders' | 'invoices'>('orders')
   const [orders, setOrders] = useState<SalesOrder[]>([])
   const [customers, setCustomers] = useState<CustomerOption[]>([])
   const [products, setProducts] = useState<ProductOption[]>([])
@@ -69,6 +88,9 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
   const [formError, setFormError] = useState('')
   const [query, setQuery] = useState('')
   const [formOpen, setFormOpen] = useState(false)
+  const [editing, setEditing] = useState<SalesOrder | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<SalesOrder | null>(null)
+  const [cancelTarget, setCancelTarget] = useState<SalesOrder | null>(null)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [selected, setSelected] = useState<SalesOrder | null>(null)
   const [confirmConfirm, setConfirmConfirm] = useState(false)
@@ -105,9 +127,11 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
   }, [quantity, unitPrice])
 
   const liveRemaining = useMemo(() => {
-    const adv = Number(advanceAmount) || 0
-    return Math.round((liveGross - adv) * 100) / 100
-  }, [liveGross, advanceAmount])
+    const paid = editing
+      ? editing.advanceAmount + editing.collectedAmount
+      : Number(advanceAmount) || 0
+    return Math.round((liveGross - paid) * 100) / 100
+  }, [liveGross, advanceAmount, editing])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -177,6 +201,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
   }
 
   const resetForm = () => {
+    setEditing(null)
     setCustomerId('')
     setProductId('')
     setOrderDate(todayYmd())
@@ -211,6 +236,28 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
     return () => window.clearTimeout(timeoutId)
   }, [canWrite])
 
+  const fillForm = (order: SalesOrder) => {
+    setCustomerId(String(order.customerId))
+    setProductId(order.productId ? String(order.productId) : '')
+    setOrderDate(order.orderDate)
+    setExpectedDeliveryDate(order.expectedDeliveryDate ?? '')
+    setQuantity(String(order.quantity))
+    setUnit(order.unit)
+    setUnitPrice(String(order.unitPrice))
+    setAdvanceAmount(String(order.advanceAmount))
+    setWidthCm(order.widthCm != null ? String(order.widthCm) : '')
+    setColorCount(order.colorCount != null ? String(order.colorCount) : '')
+    setNotes(order.notes ?? '')
+    setStatus(order.status === 'CONFIRMED' ? 'CONFIRMED' : 'DRAFT')
+    setFormError('')
+  }
+
+  const openEdit = (order: SalesOrder) => {
+    setEditing(order)
+    fillForm(order)
+    setFormOpen(true)
+  }
+
   const reloadSelectedAndList = async (id: number) => {
     await load()
     const row = await apiGet<SalesOrder>(`/orders/${id}`)
@@ -218,14 +265,14 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
     setSelectedId(id)
   }
 
-  const handleCreate = async (event: FormEvent) => {
+  const handleSave = async (event: FormEvent) => {
     event.preventDefault()
     if (!canWrite || saving) return
     if (liveRemaining < 0) {
       setFormError(t('orders.negativeRemaining'))
       return
     }
-    if (status === 'DRAFT' && Number(advanceAmount) > 0) {
+    if (!editing && status === 'DRAFT' && Number(advanceAmount) > 0) {
       setFormError(t('orders.advanceRequiresConfirmation'))
       return
     }
@@ -233,6 +280,27 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
     setError('')
     setFormError('')
     try {
+      if (editing) {
+        const updated = await apiPatch<SalesOrder>(`/orders/${editing.id}`, {
+          customerId: Number(customerId),
+          productId: productId ? Number(productId) : null,
+          orderDate,
+          expectedDeliveryDate: expectedDeliveryDate || null,
+          quantity: Number(quantity),
+          unit,
+          unitPrice: Number(unitPrice),
+          widthCm: widthCm ? Number(widthCm) : null,
+          colorCount: colorCount ? Number(colorCount) : null,
+          notes: notes.trim() || null,
+        })
+        setFormOpen(false)
+        resetForm()
+        await load()
+        setSelectedId(updated.id)
+        setSelected(updated)
+        setSuccessNotice(t('orders.updated'))
+        return
+      }
       const created = await apiRequest<SalesOrder>('/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -280,6 +348,47 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
       setConfirmConfirm(false)
       await load()
       setSuccessNotice(t('orders.confirmed'))
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t('orders.statusError'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!deleteTarget || !canWrite || saving) return
+    setSaving(true)
+    setError('')
+    try {
+      await apiDelete(`/orders/${deleteTarget.id}`)
+      if (selectedId === deleteTarget.id) {
+        setSelected(null)
+        setSelectedId(null)
+      }
+      setDeleteTarget(null)
+      await load()
+      setSuccessNotice(t('orders.deleted'))
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t('orders.deleteError'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleCancelOrder = async () => {
+    if (!cancelTarget || !canWrite || saving) return
+    setSaving(true)
+    setError('')
+    try {
+      const updated = await apiPatch<SalesOrder>(
+        `/orders/${cancelTarget.id}/status`,
+        { status: 'CANCELLED' },
+      )
+      setCancelTarget(null)
+      setSelected(updated)
+      setSelectedId(updated.id)
+      await load()
+      setSuccessNotice(t('orders.cancelled'))
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t('orders.statusError'))
     } finally {
@@ -367,6 +476,27 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
   return (
     <>
       <SuccessToast message={successNotice} onDismiss={() => setSuccessNotice('')} />
+      <div className="module-tabs" style={{ marginBottom: 16 }}>
+        <button
+          type="button"
+          className={moduleTab === 'orders' ? 'module-tab module-tab--active' : 'module-tab'}
+          onClick={() => setModuleTab('orders')}
+        >
+          {t('orders.tab.orders')}
+        </button>
+        <button
+          type="button"
+          className={moduleTab === 'invoices' ? 'module-tab module-tab--active' : 'module-tab'}
+          onClick={() => setModuleTab('invoices')}
+        >
+          {t('orders.tab.invoices')}
+        </button>
+      </div>
+
+      {moduleTab === 'invoices' ? (
+        <ProductInvoicesTab canWrite={canWrite} />
+      ) : (
+      <>
       <ModuleSummary
         items={[
           { label: t('orders.totalOrders'), value: formatNumber(summary.total) },
@@ -445,6 +575,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                   <th>{t('orders.status')}</th>
                   <th>{t('orders.amount')}</th>
                   <th>{t('orders.remaining')}</th>
+                  {canWrite && <th>{t('orders.actions')}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -467,6 +598,39 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                     </td>
                     <td>{formatCurrency(order.grossTotal, order.currency)}</td>
                     <td>{formatCurrency(order.remainingAmount, order.currency)}</td>
+                    {canWrite && (
+                      <td onClick={(event) => event.stopPropagation()}>
+                        <div className="form-actions" style={{ justifyContent: 'flex-start' }}>
+                          {canEditOrder(order.status) && (
+                            <button
+                              type="button"
+                              className="btn btn--ghost"
+                              onClick={() => openEdit(order)}
+                            >
+                              {t('orders.edit')}
+                            </button>
+                          )}
+                          {canDeleteOrder(order.status) && (
+                            <button
+                              type="button"
+                              className="btn btn--ghost"
+                              onClick={() => setDeleteTarget(order)}
+                            >
+                              {t('orders.delete')}
+                            </button>
+                          )}
+                          {order.status !== 'DRAFT' && canCancelOrder(order.status) && (
+                            <button
+                              type="button"
+                              className="btn btn--ghost"
+                              onClick={() => setCancelTarget(order)}
+                            >
+                              {t('orders.cancelOrder')}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -481,16 +645,47 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
             <h2>
               {t('orders.detail', { number: selected.orderNumber })}
             </h2>
-            <button
-              type="button"
-              className="btn btn--ghost"
-              onClick={() => {
-                setSelected(null)
-                setSelectedId(null)
-              }}
-            >
-              {t('common.close')}
-            </button>
+            <div className="form-actions">
+              {canWrite && canEditOrder(selected.status) && (
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  onClick={() => openEdit(selected)}
+                >
+                  {t('orders.edit')}
+                </button>
+              )}
+              {canWrite && canDeleteOrder(selected.status) && (
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  onClick={() => setDeleteTarget(selected)}
+                >
+                  {t('orders.delete')}
+                </button>
+              )}
+              {canWrite &&
+                selected.status !== 'DRAFT' &&
+                canCancelOrder(selected.status) && (
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    onClick={() => setCancelTarget(selected)}
+                  >
+                    {t('orders.cancelOrder')}
+                  </button>
+                )}
+              <button
+                type="button"
+                className="btn btn--ghost"
+                onClick={() => {
+                  setSelected(null)
+                  setSelectedId(null)
+                }}
+              >
+                {t('common.close')}
+              </button>
+            </div>
           </div>
           <div className="demo-form" style={{ display: 'grid', gap: 8 }}>
             <p>
@@ -725,13 +920,14 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
 
       <Modal
         open={formOpen}
-        title={t('orders.newTitle')}
+        title={editing ? t('orders.editTitle') : t('orders.newTitle')}
         onClose={() => {
           setFormOpen(false)
+          setEditing(null)
           setFormError('')
         }}
       >
-        <form className="demo-form" onSubmit={(e) => void handleCreate(e)}>
+        <form className="demo-form" onSubmit={(e) => void handleSave(e)}>
           {formError && (
             <p className="demo-notice" role="alert" style={{ margin: '0 0 12px' }}>
               {formError}
@@ -741,6 +937,10 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
             {t('orders.customer')}
             <select
               required
+              disabled={
+                editing != null &&
+                (editing.advanceAmount > 0 || editing.collectedAmount > 0)
+              }
               value={customerId}
               onChange={(e) => setCustomerId(e.target.value)}
             >
@@ -754,7 +954,11 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
           </label>
           <label>
             {t('orders.product')}
-            <select value={productId} onChange={(e) => { const id=e.target.value; setProductId(id); const p=products.find(x=>x.id===Number(id)); if(p){setUnit(p.unit); if(p.salePrice!=null)setUnitPrice(String(p.salePrice))} }}>
+            <select
+              disabled={Boolean(editing && editing.deliveredQuantity > 0)}
+              value={productId}
+              onChange={(e) => { const id=e.target.value; setProductId(id); const p=products.find(x=>x.id===Number(id)); if(p){setUnit(p.unit); if(p.salePrice!=null)setUnitPrice(String(p.salePrice))} }}
+            >
               <option value="">{t('orders.legacyProduct')}</option>
               {products.map(p=><option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
             </select>
@@ -780,7 +984,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
             {t('orders.quantity')}
             <input
               type="number"
-              min="0.001"
+              min={editing?.deliveredQuantity ? String(editing.deliveredQuantity) : '0.001'}
               step="0.001"
               required
               value={quantity}
@@ -791,6 +995,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
             {t('orders.unit')}
             <select
               value={unit}
+              disabled={Boolean(editing && editing.deliveredQuantity > 0)}
               onChange={(e) =>
                 setUnit(e.target.value as 'METER' | 'PIECE' | 'KILOGRAM')
               }
@@ -811,16 +1016,18 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
               onChange={(e) => setUnitPrice(e.target.value)}
             />
           </label>
-          <label>
-            {t('orders.advanceDzd')}
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={advanceAmount}
-              onChange={(e) => setAdvanceAmount(e.target.value)}
-            />
-          </label>
+          {!editing && (
+            <label>
+              {t('orders.advanceDzd')}
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={advanceAmount}
+                onChange={(e) => setAdvanceAmount(e.target.value)}
+              />
+            </label>
+          )}
           <label>
             {t('orders.width')}
             <input
@@ -849,17 +1056,19 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
               onChange={(e) => setNotes(e.target.value)}
             />
           </label>
-          <label>
-            {t('orders.status')}
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as 'DRAFT' | 'CONFIRMED')}
-            >
-              <option value="DRAFT">{t('orders.status.DRAFT')}</option>
-              <option value="CONFIRMED">{t('orders.status.CONFIRMED')}</option>
-            </select>
-          </label>
-          {status === 'CONFIRMED' && (
+          {!editing && (
+            <label>
+              {t('orders.status')}
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as 'DRAFT' | 'CONFIRMED')}
+              >
+                <option value="DRAFT">{t('orders.status.DRAFT')}</option>
+                <option value="CONFIRMED">{t('orders.status.CONFIRMED')}</option>
+              </select>
+            </label>
+          )}
+          {!editing && status === 'CONFIRMED' && (
             <p className="demo-notice" role="status">
               {t('orders.confirmedLedgerNotice')}
             </p>
@@ -877,7 +1086,12 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
               <strong>{t('orders.total')}:</strong> {formatCurrency(liveGross)}
             </p>
             <p>
-              <strong>{t('orders.advance')}:</strong> {formatCurrency(Number(advanceAmount) || 0)}
+              <strong>{t('orders.advance')}:</strong>{' '}
+              {formatCurrency(
+                editing
+                  ? editing.advanceAmount + editing.collectedAmount
+                  : Number(advanceAmount) || 0,
+              )}
             </p>
             <p>
               <strong>{t('orders.remaining')}:</strong>{' '}
@@ -902,7 +1116,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                 saving ||
                 liveRemaining < 0 ||
                 !customerId ||
-                (status === 'DRAFT' && Number(advanceAmount) > 0)
+                (!editing && status === 'DRAFT' && Number(advanceAmount) > 0)
               }
             >
               {saving ? t('orders.saving') : t('common.save')}
@@ -919,6 +1133,32 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
         onCancel={() => setConfirmConfirm(false)}
         onConfirm={() => void handleConfirmStatus()}
       />
+      <ConfirmDialog
+        open={deleteTarget != null}
+        title={t('orders.deleteTitle')}
+        message={
+          deleteTarget
+            ? t('orders.deleteConfirm', { number: deleteTarget.orderNumber })
+            : ''
+        }
+        confirmLabel={t('orders.delete')}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => void handleDelete()}
+      />
+      <ConfirmDialog
+        open={cancelTarget != null}
+        title={t('orders.cancelTitle')}
+        message={
+          cancelTarget
+            ? t('orders.cancelMessage', { number: cancelTarget.orderNumber })
+            : ''
+        }
+        confirmLabel={t('orders.cancelOrder')}
+        onCancel={() => setCancelTarget(null)}
+        onConfirm={() => void handleCancelOrder()}
+      />
+      </>
+      )}
     </>
   )
 }

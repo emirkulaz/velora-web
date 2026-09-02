@@ -1,8 +1,15 @@
+import { useEffect } from 'react'
+import { playStartupSound } from '../audio/startupSound'
 import { VeloraLogo } from './VeloraLogo'
 import { useI18n } from '../i18n/I18nProvider'
 
 export function StartupScreen() {
   const { t } = useI18n()
+
+  useEffect(() => {
+    playStartupSound()
+  }, [])
+
   return (
     <main className="startup-screen" aria-live="polite" aria-label="VEXOR ERP yükleniyor">
       <div className="startup-screen__backdrop" />

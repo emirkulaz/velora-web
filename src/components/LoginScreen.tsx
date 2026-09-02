@@ -11,8 +11,9 @@ import {
   isQuickLoginEnabled,
   type QuickLoginAccount,
 } from '../data/quickLoginAccounts'
+import { unlockStartupSound } from '../audio/startupSound'
 import { useI18n } from '../i18n/I18nProvider'
-import { apiGetWithToken, apiPublicPost } from '../data/api'
+import { ApiError, apiGetWithToken, apiPublicPost } from '../data/api'
 import { LanguageSelector } from './LanguageSelector'
 import { VeloraLogo } from './VeloraLogo'
 import './LoginScreen.css'
@@ -51,6 +52,7 @@ export function LoginScreen({
   const quickAccounts = showQuickLogin ? getQuickLoginAccounts() : []
 
   const authenticate = async (identifierRaw: string, passwordValue: string) => {
+    unlockStartupSound()
     setError('')
     setIsSubmitting(true)
 
@@ -91,8 +93,9 @@ export function LoginScreen({
       }
 
       onAuthenticated(company)
-    } catch {
-      setError(t('login.error'))
+    } catch (caught) {
+      const isCredentialError = caught instanceof ApiError && caught.status === 401
+      setError(isCredentialError ? t('login.error') : caught instanceof Error ? caught.message : t('login.error'))
     } finally {
       setIsSubmitting(false)
     }
@@ -105,6 +108,7 @@ export function LoginScreen({
 
   const handleMfaSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    unlockStartupSound()
     setError(''); setIsSubmitting(true)
     try {
       const { accessToken } = await apiPublicPost<{ accessToken: string }>(

@@ -53,7 +53,7 @@ describe('ProductionModule localization', () => {
     expect(await screen.findByText('PO-2026-09')).toBeInTheDocument()
     expect(screen.getAllByText('Delayed').length).toBeGreaterThan(0)
     expect(screen.getByText(/1,000 Piece/)).toBeInTheDocument()
-    expect(screen.getByText('10/08/2026')).toBeInTheDocument()
+    expect(screen.getByText(/^10\/08\/2026/)).toBeInTheDocument()
     expect(screen.queryByText('IN_PROGRESS')).not.toBeInTheDocument()
     expect(screen.queryByText('PIECE')).not.toBeInTheDocument()
   })

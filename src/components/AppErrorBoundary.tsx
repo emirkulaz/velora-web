@@ -1,22 +1,9 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { useI18n } from '../i18n/I18nProvider'
+import { recoverFromFatalClientError } from '../runtime/appRecovery'
 
 type Props = { children: ReactNode; title: string; description: string; reload: string }
 type State = { failed: boolean }
-
-const RECOVERY_ATTEMPT_KEY = 'vexor.error-recovery-attempted'
-
-async function clearStaleAppAssets() {
-  if ('serviceWorker' in navigator) {
-    const registrations = await navigator.serviceWorker.getRegistrations()
-    await Promise.all(registrations.map((registration) => registration.unregister()))
-  }
-
-  if ('caches' in window) {
-    const cacheNames = await caches.keys()
-    await Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)))
-  }
-}
 
 class ErrorBoundaryImpl extends Component<Props, State> {
   state: State = { failed: false }
@@ -34,12 +21,7 @@ class ErrorBoundaryImpl extends Component<Props, State> {
       }),
     )
 
-    if (!sessionStorage.getItem(RECOVERY_ATTEMPT_KEY)) {
-      sessionStorage.setItem(RECOVERY_ATTEMPT_KEY, '1')
-      const url = new URL(window.location.href)
-      url.searchParams.set('vexor-reload', String(Date.now()))
-      void clearStaleAppAssets().finally(() => window.location.replace(url.toString()))
-    }
+    void recoverFromFatalClientError()
   }
 
   render() {

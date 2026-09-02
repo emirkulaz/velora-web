@@ -173,3 +173,99 @@ export function canWriteProduction(role: AppUserRole | null | undefined): boolea
   if (!role) return false
   return PRODUCTION_WRITE_ROLES.includes(role)
 }
+
+export function canWriteWorkforce(role: AppUserRole | null | undefined): boolean {
+  if (!role) return false
+  return (
+    PRODUCTION_WRITE_ROLES.includes(role) || role === 'ACCOUNTING_OPERATIONS'
+  )
+}
+
+/** AI örnek soru alanları — backend read role gruplarıyla hizalı. */
+export type AiSuggestionDomain =
+  | 'finance'
+  | 'customers'
+  | 'orders'
+  | 'stock'
+  | 'production'
+  | 'workforce'
+  | 'suppliers'
+  | 'risks'
+
+const AI_DOMAIN_ROLES: Record<AiSuggestionDomain, AppUserRole[]> = {
+  finance: [
+    'ADMIN',
+    'OWNER',
+    'MEMBER',
+    'VIEWER',
+    'ACCOUNTING_OPERATOR',
+    'ACCOUNTING_OPERATIONS',
+  ],
+  customers: [
+    'ADMIN',
+    'OWNER',
+    'MEMBER',
+    'VIEWER',
+    'ACCOUNTING_OPERATOR',
+    'ACCOUNTING_OPERATIONS',
+  ],
+  orders: [
+    'ADMIN',
+    'OWNER',
+    'MEMBER',
+    'VIEWER',
+    'ACCOUNTING_OPERATOR',
+    'ACCOUNTING_OPERATIONS',
+    'PRODUCTION_MANAGER',
+  ],
+  stock: [
+    'ADMIN',
+    'OWNER',
+    'MEMBER',
+    'VIEWER',
+    'PRODUCTION_MANAGER',
+    'ACCOUNTING_OPERATOR',
+    'ACCOUNTING_OPERATIONS',
+  ],
+  production: [
+    'ADMIN',
+    'OWNER',
+    'MEMBER',
+    'VIEWER',
+    'PRODUCTION_MANAGER',
+    'ACCOUNTING_OPERATIONS',
+  ],
+  workforce: [
+    'ADMIN',
+    'OWNER',
+    'MEMBER',
+    'VIEWER',
+    'PRODUCTION_MANAGER',
+    'ACCOUNTING_OPERATIONS',
+  ],
+  suppliers: [
+    'ADMIN',
+    'OWNER',
+    'MEMBER',
+    'VIEWER',
+    'ACCOUNTING_OPERATOR',
+    'ACCOUNTING_OPERATIONS',
+    'PRODUCTION_MANAGER',
+  ],
+  risks: [
+    'ADMIN',
+    'OWNER',
+    'MEMBER',
+    'VIEWER',
+    'ACCOUNTING_OPERATOR',
+    'ACCOUNTING_OPERATIONS',
+  ],
+}
+
+export function canAccessAiSuggestionDomain(
+  role: AppUserRole | null | undefined,
+  domain: AiSuggestionDomain,
+): boolean {
+  if (!role) return true
+  return AI_DOMAIN_ROLES[domain].includes(role)
+}

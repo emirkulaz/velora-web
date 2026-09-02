@@ -19,7 +19,7 @@ describe('UserManagementModule localization', () => {
     expect(screen.getByRole('heading', { name: 'Gestion des utilisateurs' })).toBeInTheDocument()
     expect(screen.getByText('Administrateur')).toBeInTheDocument()
     expect(screen.getByText('Actif')).toBeInTheDocument()
-    expect(screen.getByText('13/08/2026')).toBeInTheDocument()
+    expect(screen.getByText(/^13\/08\/2026/)).toBeInTheDocument()
     expect(screen.queryByText('ADMIN')).not.toBeInTheDocument()
   })
 })

@@ -415,7 +415,7 @@ function App() {
 
         <main className="content">
           {activeMenu === 'overview' && <ExchangeRateTicker />}
-          <AiCommandPanel userName={currentUser?.name} />
+          <AiCommandPanel userName={currentUser?.name} userRole={currentUser?.role} />
           {activeMenu === 'dailyWork' && (
             <DailyWorkActions onNavigate={setActiveMenu} />
           )}
