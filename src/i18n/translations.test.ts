@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { translations, type UiLanguage } from './I18nProvider'
 
-const languages: UiLanguage[] = ['tr', 'fr', 'en']
+const languages: UiLanguage[] = ['tr', 'fr', 'en', 'ar']
 
 describe('translation catalog', () => {
   it('uses the same key set for every supported language', () => {

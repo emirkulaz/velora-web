@@ -28,7 +28,7 @@ describe('LTR form fields (tr)', () => {
       <LoginScreen rememberedCompany={null} onAuthenticated={() => undefined} />,
     )
 
-    const loginInput = screen.getByLabelText(/^e-posta$/i)
+    const loginInput = screen.getByLabelText(/^e-posta veya kullanıcı adı$/i)
     expect(loginInput).toHaveAttribute('dir', 'ltr')
 
     await user.type(loginInput, 'مرحبا@test.com')
@@ -40,7 +40,7 @@ describe('LTR form fields (tr)', () => {
     expect(loginInput).toHaveAttribute('dir', 'ltr')
 
     rerender(<LoginScreen rememberedCompany={null} onAuthenticated={() => undefined} />)
-    expect(screen.getByLabelText(/^e-posta$/i)).toHaveAttribute(
+    expect(screen.getByLabelText(/^e-posta veya kullanıcı adı$/i)).toHaveAttribute(
       'dir',
       'ltr',
     )

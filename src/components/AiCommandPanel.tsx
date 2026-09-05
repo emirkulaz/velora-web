@@ -378,7 +378,7 @@ export function AiCommandPanel({
           </div>
           <div className="demo-response__body">
             {response.content.split('\n').map((line, index) => (
-              <p key={`${index}-${line.slice(0, 12)}`}>{line || '\u00A0'}</p>
+              <p dir="auto" key={`${index}-${line.slice(0, 12)}`}>{line || '\u00A0'}</p>
             ))}
           </div>
           {response.reportUrl && (

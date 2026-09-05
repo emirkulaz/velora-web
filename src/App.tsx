@@ -1,9 +1,16 @@
-import { Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
-import { AiCommandPanel } from './components/AiCommandPanel'
-import { ExchangeRateTicker } from './components/ExchangeRateTicker'
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from 'react'
 import { Icon } from './components/Icons'
+import { SectionErrorBoundary } from './components/AppErrorBoundary'
 import { LanguageSelector } from './components/LanguageSelector'
-import { MfaSetupPanel } from './components/MfaSetupPanel'
 import { LoginScreen } from './components/LoginScreen'
 import { StartupScreen } from './components/StartupScreen'
 import { BRAND_NAME, VeloraLogo } from './components/VeloraLogo'
@@ -14,16 +21,28 @@ import {
   resolveCompanyLogo,
   type CompanyPresentation,
 } from './data/companyBranding'
-import { SESSION_EXPIRED_EVENT, apiGet, apiPatch } from './data/api'
-import { CRITICAL_ALERTS, menuItems, type MenuId } from './data/demoData'
+import { ApiError, SESSION_EXPIRED_EVENT, apiGet, apiPatch } from './data/api'
+import { menuGroups, menuItems, type MenuId } from './data/demoData'
 import { canAccessMenu, type AppUserRole } from './data/roles'
 import { applyDocumentDirection, getUiTextDirection } from './i18n/documentDirection'
 import { enforceLtrOnTree } from './i18n/enforceLtrFields'
 import { useI18n } from './i18n/I18nProvider'
 import { fileToAvatarDataUrl } from './utils/avatarImage'
-import { DailyWorkActions } from './views/DailyWorkActions'
 import { renderModule } from './views'
 import './App.css'
+
+const AiCommandPanel = lazy(() =>
+  import('./components/AiCommandPanel').then((module) => ({ default: module.AiCommandPanel })),
+)
+const ExchangeRateTicker = lazy(() =>
+  import('./components/ExchangeRateTicker').then((module) => ({ default: module.ExchangeRateTicker })),
+)
+const MfaSetupPanel = lazy(() =>
+  import('./components/MfaSetupPanel').then((module) => ({ default: module.MfaSetupPanel })),
+)
+const DailyWorkActions = lazy(() =>
+  import('./views/DailyWorkActions').then((module) => ({ default: module.DailyWorkActions })),
+)
 
 interface CurrentUser {
   name: string
@@ -80,6 +99,9 @@ function App() {
           sessionStorage.getItem('velora.accessToken')
       ),
   )
+  const [authError, setAuthError] = useState('')
+  const [authAttempt, setAuthAttempt] = useState(0)
+  const authRetryCountRef = useRef(0)
   const [companyPresentation, setCompanyPresentation] = useState<CompanyPresentation | null>(
     readLastCompanyPresentation,
   )
@@ -94,9 +116,23 @@ function App() {
     setNotificationsOpen(false)
     setProfileOpen(false)
   }
+  const retryAuthentication = useCallback(() => {
+    setAuthReady(false)
+    setAuthError('')
+    setAuthAttempt((value) => value + 1)
+  }, [])
 
-  const visibleMenuItems = useMemo(
-    () => menuItems.filter((item) => canAccessMenu(currentUser?.role, item.id)),
+  const visibleMenuGroups = useMemo(
+    () =>
+      menuGroups
+        .map((group) => ({
+          ...group,
+          items: group.items.flatMap((itemId) => {
+            const item = menuItems.find((candidate) => candidate.id === itemId)
+            return item && canAccessMenu(currentUser?.role, item.id) ? [item] : []
+          }),
+        }))
+        .filter((group) => group.items.length > 0),
     [currentUser?.role],
   )
 
@@ -108,20 +144,34 @@ function App() {
   useEffect(() => {
     if (!isAuthenticated) return
     let cancelled = false
+    let retryId: number | undefined
 
     apiGet<CurrentUser>('/users/me')
       .then((user) => {
         if (cancelled) return
+        authRetryCountRef.current = 0
         setCurrentUser(user)
         if (user.preferredLanguage) setLanguage(user.preferredLanguage)
         setActiveMenu(preferredMenu(user.role))
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (cancelled) return
-        clearSession()
-        setCompanyPresentation(null)
-        setIsAuthenticated(false)
-        setCurrentUser(null)
+        if (error instanceof ApiError && error.status === 401) {
+          clearSession()
+          setCompanyPresentation(null)
+          setIsAuthenticated(false)
+          setCurrentUser(null)
+          return
+        }
+
+        authRetryCountRef.current += 1
+        setAuthError(t('startup.serverUnavailable'))
+        if (authRetryCountRef.current <= 5) {
+          const delayMs = Math.min(1_000 * 2 ** (authRetryCountRef.current - 1), 8_000)
+          retryId = window.setTimeout(() => {
+            if (!cancelled) retryAuthentication()
+          }, delayMs)
+        }
       })
       .finally(() => {
         if (!cancelled) setAuthReady(true)
@@ -137,8 +187,9 @@ function App() {
       })
     return () => {
       cancelled = true
+      if (retryId) window.clearTimeout(retryId)
     }
-  }, [isAuthenticated, setLanguage])
+  }, [authAttempt, isAuthenticated, retryAuthentication, setLanguage, t])
 
   useEffect(() => {
     const handleSessionExpired = () => {
@@ -146,6 +197,8 @@ function App() {
       setCompanyPresentation(null)
       setIsAuthenticated(false)
       setCurrentUser(null)
+      setAuthError('')
+      authRetryCountRef.current = 0
       setAuthReady(true)
       closeHeaderMenus()
     }
@@ -161,6 +214,8 @@ function App() {
     closeHeaderMenus()
     setIsAuthenticated(false)
     setCurrentUser(null)
+    setAuthError('')
+    authRetryCountRef.current = 0
     setAuthReady(true)
   }
 
@@ -198,10 +253,13 @@ function App() {
     }
   }
 
-  if (isAuthenticated && !authReady) {
+  if (isAuthenticated && (!authReady || authError)) {
     return (
       <div className="app" dir={uiDir}>
-        <StartupScreen />
+        <StartupScreen
+          error={authError || undefined}
+          onRetry={authError ? retryAuthentication : undefined}
+        />
       </div>
     )
   }
@@ -237,23 +295,30 @@ function App() {
           <VeloraLogo variant="full" theme="dark" />
         </div>
 
-        <nav className="sidebar__nav">
-          {visibleMenuItems.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`nav-item ${activeMenu === item.id ? 'nav-item--active' : ''}`}
-              onClick={() => {
-                setActiveMenu(item.id)
-                closeSidebar()
-                closeHeaderMenus()
-              }}
-            >
-              <span className="nav-item__icon">
-                <Icon name={item.icon} />
-              </span>
-              <span className="nav-item__label">{t(`nav.${item.id}`)}</span>
-            </button>
+        <nav className="sidebar__nav" aria-label={t('nav.group.workspace')}>
+          {visibleMenuGroups.map((group) => (
+            <div className="nav-group" key={group.id}>
+              <span className="nav-group__label">{t(group.labelKey)}</span>
+              <div className="nav-group__items">
+                {group.items.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`nav-item ${activeMenu === item.id ? 'nav-item--active' : ''}`}
+                    onClick={() => {
+                      setActiveMenu(item.id)
+                      closeSidebar()
+                      closeHeaderMenus()
+                    }}
+                  >
+                    <span className="nav-item__icon">
+                      <Icon name={item.icon} />
+                    </span>
+                    <span className="nav-item__label">{t(`nav.${item.id}`)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
 
@@ -287,11 +352,14 @@ function App() {
             >
               <Icon name="menu" />
             </button>
-            <LanguageSelector className="language-selector--header" />
+            <div className="header__title">
+              <h1>{t(`nav.${activeMenu}`)}</h1>
+              <p>{companyPresentation?.name ?? BRAND_NAME}</p>
+            </div>
           </div>
 
           <div className="header__right">
-            <VeloraLogo variant="full" theme="light" className="header-brand" />
+            <LanguageSelector className="language-selector--header" />
             <button
               type="button"
               className="theme-toggle"
@@ -314,22 +382,11 @@ function App() {
                 }}
               >
                 <Icon name="bell" />
-                {CRITICAL_ALERTS.length > 0 && (
-                  <span className="icon-btn__badge">{CRITICAL_ALERTS.length}</span>
-                )}
               </button>
               {notificationsOpen && (
                 <div className="header-popover header-popover--notifications" role="dialog" aria-label={t('common.notifications')}>
                   <strong>{t('common.notifications')}</strong>
-                  {CRITICAL_ALERTS.length === 0 ? (
-                    <p>{t('common.noNotifications')}</p>
-                  ) : (
-                    <ul>
-                      {CRITICAL_ALERTS.map((alert) => (
-                        <li key={alert.id}>{alert.text}</li>
-                      ))}
-                    </ul>
-                  )}
+                  <p>{t('common.noNotifications')}</p>
                 </div>
               )}
             </div>
@@ -392,7 +449,11 @@ function App() {
                       {avatarError}
                     </p>
                   ) : null}
-                  {currentUser?.role === 'ADMIN' || currentUser?.role === 'OWNER' ? <MfaSetupPanel /> : null}
+                  {currentUser?.role === 'ADMIN' || currentUser?.role === 'OWNER' ? (
+                    <Suspense fallback={null}>
+                      <MfaSetupPanel />
+                    </Suspense>
+                  ) : null}
                   <button type="button" onClick={logout}>{t('common.logout')}</button>
                 </div>
               )}
@@ -400,35 +461,38 @@ function App() {
           </div>
         </header>
 
-        {CRITICAL_ALERTS.length > 0 && (
-          <div className="alerts-bar">
-            <span className="alerts-bar__label">Dikkat</span>
-            <div className="alerts-bar__items">
-              {CRITICAL_ALERTS.map((alert) => (
-                <button key={alert.id} type="button" className="alert-chip">
-                  {alert.text}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         <main className="content">
-          {activeMenu === 'overview' && <ExchangeRateTicker />}
-          <AiCommandPanel userName={currentUser?.name} userRole={currentUser?.role} />
+          {activeMenu === 'overview' && (
+            <SectionErrorBoundary resetKey="exchange-rates">
+              <Suspense fallback={null}>
+                <ExchangeRateTicker />
+              </Suspense>
+            </SectionErrorBoundary>
+          )}
+          <SectionErrorBoundary resetKey="ai-command-panel">
+            <Suspense fallback={<p className="demo-notice">{t('common.loading')}</p>}>
+              <AiCommandPanel userName={currentUser?.name} userRole={currentUser?.role} />
+            </Suspense>
+          </SectionErrorBoundary>
           {activeMenu === 'dailyWork' && (
-            <DailyWorkActions onNavigate={setActiveMenu} />
+            <SectionErrorBoundary resetKey="daily-work-actions">
+              <Suspense fallback={null}>
+                <DailyWorkActions onNavigate={setActiveMenu} />
+              </Suspense>
+            </SectionErrorBoundary>
           )}
           <div className="module-area">
-            <Suspense fallback={<p className="demo-notice">{t('common.loading')}</p>}>
-            {renderModule(
-              activeMenu,
-              companyPresentation,
-              currentUser?.role,
-              setActiveMenu,
-              t,
-            )}
-            </Suspense>
+            <SectionErrorBoundary resetKey={activeMenu}>
+              <Suspense fallback={<p className="demo-notice">{t('common.loading')}</p>}>
+              {renderModule(
+                activeMenu,
+                companyPresentation,
+                currentUser?.role,
+                setActiveMenu,
+                t,
+              )}
+              </Suspense>
+            </SectionErrorBoundary>
           </div>
           <footer className="content-credit" aria-label="Credits">
             Created by Emir Kulaz

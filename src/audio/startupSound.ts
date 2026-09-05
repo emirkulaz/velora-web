@@ -19,7 +19,12 @@ function getAudioContext(): AudioContext | null {
   const Ctor = window.AudioContext ?? Win.webkitAudioContext
   if (!Ctor) return null
 
-  sharedContext = new Ctor()
+  try {
+    sharedContext = new Ctor()
+  } catch {
+    // Ses desteği uygulamanın açılışını hiçbir zaman engellememeli.
+    sharedContext = null
+  }
   return sharedContext
 }
 
@@ -49,7 +54,11 @@ function createNoiseBuffer(ctx: AudioContext, durationSec: number): AudioBuffer 
  */
 export function playStartupSound(): void {
   if (playedForSession) return
-  if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  if (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  ) {
     return
   }
 

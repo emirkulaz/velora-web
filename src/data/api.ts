@@ -1,5 +1,7 @@
 const API_BASE_URL = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/+$/, '')
 export const SESSION_EXPIRED_EVENT = 'velora:session-expired'
+const REQUEST_TIMEOUT_MS = 30_000
+const TRANSIENT_GET_STATUSES = new Set([408, 502, 503, 504])
 
 export class ApiError extends Error {
   readonly status: number
@@ -43,24 +45,89 @@ async function parseError(response: Response): Promise<ApiError> {
   return new ApiError(message, response.status)
 }
 
+function requestMethod(init?: RequestInit): string {
+  return (init?.method ?? 'GET').toUpperCase()
+}
+
+function waitBeforeRetry(): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, 200))
+}
+
+async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController()
+  let timedOut = false
+  const forwardAbort = () => controller.abort(init?.signal?.reason)
+  const timeoutId = window.setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, REQUEST_TIMEOUT_MS)
+
+  if (init?.signal?.aborted) {
+    forwardAbort()
+  } else {
+    init?.signal?.addEventListener('abort', forwardAbort, { once: true })
+  }
+
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } catch {
+    if (init?.signal?.aborted) {
+      throw new ApiError('İstek iptal edildi.', 0)
+    }
+    if (timedOut) {
+      throw new ApiError('Sunucu zamanında yanıt vermedi. Lütfen tekrar deneyin.', 0)
+    }
+    throw new ApiError('Sunucuya ulaşılamıyor. Bağlantınızı kontrol edin.', 0)
+  } finally {
+    window.clearTimeout(timeoutId)
+    init?.signal?.removeEventListener('abort', forwardAbort)
+  }
+}
+
+async function fetchWithSafeRetry(path: string, init?: RequestInit): Promise<Response> {
+  const canRetry = requestMethod(init) === 'GET'
+  const attempts = canRetry ? 2 : 1
+  let lastError: ApiError | null = null
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const response = await fetchWithTimeout(`${API_BASE_URL}${path}`, init)
+      if (
+        canRetry &&
+        attempt + 1 < attempts &&
+        TRANSIENT_GET_STATUSES.has(response.status)
+      ) {
+        await waitBeforeRetry()
+        continue
+      }
+      return response
+    } catch (error) {
+      lastError = error instanceof ApiError
+        ? error
+        : new ApiError('Sunucuya ulaşılamıyor. Bağlantınızı kontrol edin.', 0)
+      if (!canRetry || attempt + 1 >= attempts || init?.signal?.aborted) {
+        throw lastError
+      }
+      await waitBeforeRetry()
+    }
+  }
+
+  throw lastError ?? new ApiError('İstek tamamlanamadı.', 0)
+}
+
 async function request<T>(
   path: string,
   init: RequestInit | undefined,
   accessToken: string | null,
   emitSessionExpired: boolean,
 ): Promise<T> {
-  let response: Response
-  try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
-      ...init,
-      headers: {
-        ...(init?.headers ?? {}),
-        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-      },
-    })
-  } catch {
-    throw new ApiError('Sunucuya ulaşılamıyor. Bağlantınızı kontrol edin.', 0)
-  }
+  const response = await fetchWithSafeRetry(path, {
+    ...init,
+    headers: {
+      ...(init?.headers ?? {}),
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+  })
 
   if (!response.ok) {
     if (response.status === 401 && emitSessionExpired) {
@@ -130,14 +197,9 @@ export function apiDelete<T>(path: string): Promise<T> {
 
 export async function apiDownload(path: string): Promise<Blob> {
   const accessToken = readAccessToken()
-  let response: Response
-  try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
-      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-    })
-  } catch {
-    throw new ApiError('Sunucuya ulaşılamıyor. Bağlantınızı kontrol edin.', 0)
-  }
+  const response = await fetchWithSafeRetry(path, {
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+  })
   if (!response.ok) {
     if (response.status === 401) {
       window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT))

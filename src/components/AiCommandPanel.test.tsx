@@ -116,6 +116,32 @@ describe('AiCommandPanel suggestions', () => {
     expect(await screen.findByText('Kasa bakiyesi 1.000 DZD.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Kasada ne kadar para var?' })).not.toBeInTheDocument()
   })
+
+  it('renders Arabic/Darija answers with automatic RTL direction', async () => {
+    localStorage.setItem('velora.uiLanguage', 'tr')
+    apiRequest.mockResolvedValue({
+      answer: 'النتيجة: خلال الأيام السبعة القادمة 230.000 DZD مستحقة للدفع.',
+      dateFrom: null,
+      dateTo: null,
+      generatedAt: '2026-09-04T00:00:00.000Z',
+      dataFreshness: '2026-09-04T00:00:00.000Z',
+      recordsUsed: 2,
+      disclaimer: '',
+    })
+    const user = userEvent.setup()
+    render(
+      <I18nProvider>
+        <AiCommandPanel userRole="OWNER" />
+      </I18nProvider>,
+    )
+
+    const input = screen.getByRole('textbox')
+    await user.type(input, 'شحال لازم نخلص في 7 أيام؟')
+    await user.click(screen.getByRole('button', { name: 'Gönder' }))
+
+    const answer = await screen.findByText(/النتيجة:/)
+    expect(answer).toHaveAttribute('dir', 'auto')
+  })
 })
 
 describe('canAccessAiSuggestionDomain', () => {

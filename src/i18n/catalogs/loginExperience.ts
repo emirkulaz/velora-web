@@ -1,13 +1,16 @@
 export const loginExperienceTranslations = {
   tr: {
+    'login.identifierPlaceholder': 'asma, amel, admin veya e-posta',
     'login.companyDescription': '{name} operasyonlarını güvenle yönetin.', 'login.showcaseLabel': '{name} üretim yönetimi', 'login.showcaseTitle': 'Üretiminizdeki her kritik karar tek ekranda.', 'login.showcaseDescription': 'Stok, sipariş, üretim ve finans akışlarını VEXOR ile net ve hızlı yönetin.', 'login.stock': 'Stok', 'login.stockDetail': 'anlık görünürlük', 'login.production': 'Üretim', 'login.productionDetail': 'kontrollü akış', 'login.aiDetail': 'doğal dil desteği',
     'mfa.beginError': 'MFA kurulumu başlatılamadı.', 'mfa.invalidCode': 'Doğrulama kodu geçersiz.', 'mfa.recoveryTitle': 'Kurtarma kodları — yalnız bir kez gösterilir', 'mfa.closeCodes': 'Kodları kapat', 'mfa.importUri': 'Authenticator uygulamasında bu kurulum adresini içe aktarın:', 'mfa.codePlaceholder': '6 haneli kod', 'mfa.enable': 'MFA’yı etkinleştir', 'mfa.setup': 'Authenticator MFA kur',
   },
   fr: {
+    'login.identifierPlaceholder': 'asma, amel, admin ou e-mail',
     'login.companyDescription': 'Gérez les opérations de {name} en toute sécurité.', 'login.showcaseLabel': 'Gestion de production {name}', 'login.showcaseTitle': 'Chaque décision critique de production sur un seul écran.', 'login.showcaseDescription': 'Gérez clairement et rapidement les stocks, commandes, production et finances avec VEXOR.', 'login.stock': 'Stock', 'login.stockDetail': 'visibilité en temps réel', 'login.production': 'Production', 'login.productionDetail': 'flux maîtrisé', 'login.aiDetail': 'assistance en langage naturel',
     'mfa.beginError': 'Impossible de démarrer la configuration MFA.', 'mfa.invalidCode': 'Le code de vérification est incorrect.', 'mfa.recoveryTitle': 'Codes de récupération — affichés une seule fois', 'mfa.closeCodes': 'Fermer les codes', 'mfa.importUri': 'Importez cette adresse de configuration dans votre application Authenticator :', 'mfa.codePlaceholder': 'Code à 6 chiffres', 'mfa.enable': 'Activer la MFA', 'mfa.setup': 'Configurer Authenticator MFA',
   },
   en: {
+    'login.identifierPlaceholder': 'asma, amel, admin or email',
     'login.companyDescription': 'Manage {name} operations securely.', 'login.showcaseLabel': '{name} production management', 'login.showcaseTitle': 'Every critical production decision on one screen.', 'login.showcaseDescription': 'Manage stock, orders, production, and finance clearly and quickly with VEXOR.', 'login.stock': 'Stock', 'login.stockDetail': 'real-time visibility', 'login.production': 'Production', 'login.productionDetail': 'controlled workflow', 'login.aiDetail': 'natural-language assistance',
     'mfa.beginError': 'MFA setup could not be started.', 'mfa.invalidCode': 'The verification code is invalid.', 'mfa.recoveryTitle': 'Recovery codes — shown only once', 'mfa.closeCodes': 'Close codes', 'mfa.importUri': 'Import this setup address into your Authenticator app:', 'mfa.codePlaceholder': '6-digit code', 'mfa.enable': 'Enable MFA', 'mfa.setup': 'Set up Authenticator MFA',
   },

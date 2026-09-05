@@ -23,7 +23,7 @@ describe('LoginScreen errors', () => {
     apiPublicPost.mockRejectedValue(new ApiError('Sunucuya ulaşılamıyor. Bağlantınızı kontrol edin.', 0))
     render(<I18nProvider><LoginScreen rememberedCompany={null} onAuthenticated={vi.fn()} /></I18nProvider>)
 
-    fireEvent.change(screen.getByLabelText('E-posta'), { target: { value: 'owner' } })
+    fireEvent.change(screen.getByLabelText('E-posta veya kullanıcı adı'), { target: { value: 'owner' } })
     fireEvent.change(screen.getByLabelText('Şifre'), { target: { value: 'correct-password' } })
     fireEvent.click(screen.getByRole('button', { name: 'Giriş Yap' }))
 
@@ -34,7 +34,7 @@ describe('LoginScreen errors', () => {
     apiPublicPost.mockRejectedValue(new ApiError('Bu hesap için MFA kurulumu zorunludur.', 403))
     render(<I18nProvider><LoginScreen rememberedCompany={null} onAuthenticated={vi.fn()} /></I18nProvider>)
 
-    fireEvent.change(screen.getByLabelText('E-posta'), { target: { value: 'owner' } })
+    fireEvent.change(screen.getByLabelText('E-posta veya kullanıcı adı'), { target: { value: 'owner' } })
     fireEvent.change(screen.getByLabelText('Şifre'), { target: { value: 'correct-password' } })
     fireEvent.click(screen.getByRole('button', { name: 'Giriş Yap' }))
 

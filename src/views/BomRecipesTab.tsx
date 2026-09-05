@@ -29,6 +29,10 @@ type BomItem = {
     | 'LITER'
   wastePercent: number
   notes?: string | null
+  yarnMaterial?: string | null
+  yarnColor?: string | null
+  yarnCount?: string | null
+  denier?: number | null
 }
 
 type Bom = {
@@ -40,6 +44,14 @@ type Bom = {
   version: number
   isActive: boolean
   items: BomItem[]
+  productType?: 'STRIP' | 'SCARF' | 'WRISTBAND' | 'COLLAR' | 'CUFF' | 'OTHER' | 'BAND' | null
+  outputUnit?: string | null
+  theoreticalWeightGrams?: number | null
+  machineProgram?: string | null
+  pattern?: string | null
+  gauge?: number | null
+  estimatedMinutesPerUnit?: number | null
+  expectedWastePercent?: number | null
 }
 
 const UNIT_LABEL: Record<BomItem['unit'], string> = {
@@ -74,12 +86,16 @@ export function BomRecipesTab({
   const [items, setItems] = useState<BomItem[]>([
     { materialProductId: 0, quantityPerUnit: 15, unit: 'GRAM', wastePercent: 3 },
   ])
+  const [recipeMeta, setRecipeMeta] = useState({
+    productType: 'OTHER', outputUnit: 'PIECE', theoreticalWeightGrams: '', machineProgram: '', pattern: '', gauge: '', estimatedMinutesPerUnit: '', expectedWastePercent: '',
+  })
 
   const resetForm = useCallback(() => {
     setEditingBom(null)
     setProductId('')
     setName(t('boms.defaultName'))
     setItems([{ materialProductId: 0, quantityPerUnit: 15, unit: 'GRAM', wastePercent: 3 }])
+    setRecipeMeta({ productType: 'OTHER', outputUnit: 'PIECE', theoreticalWeightGrams: '', machineProgram: '', pattern: '', gauge: '', estimatedMinutesPerUnit: '', expectedWastePercent: '' })
   }, [t])
 
   const load = useCallback(async () => {
@@ -113,9 +129,23 @@ export function BomRecipesTab({
             unit: item.unit,
             wastePercent: item.wastePercent,
             notes: item.notes,
+            yarnMaterial: item.yarnMaterial,
+            yarnColor: item.yarnColor,
+            yarnCount: item.yarnCount,
+            denier: item.denier,
           }))
         : [{ materialProductId: 0, quantityPerUnit: 1, unit: 'GRAM', wastePercent: 0 }],
     )
+    setRecipeMeta({
+      productType: bom.productType ?? 'OTHER',
+      outputUnit: bom.outputUnit ?? 'PIECE',
+      theoreticalWeightGrams: bom.theoreticalWeightGrams == null ? '' : String(bom.theoreticalWeightGrams),
+      machineProgram: bom.machineProgram ?? '',
+      pattern: bom.pattern ?? '',
+      gauge: bom.gauge == null ? '' : String(bom.gauge),
+      estimatedMinutesPerUnit: bom.estimatedMinutesPerUnit == null ? '' : String(bom.estimatedMinutesPerUnit),
+      expectedWastePercent: bom.expectedWastePercent == null ? '' : String(bom.expectedWastePercent),
+    })
     setError('')
   }
 
@@ -129,10 +159,21 @@ export function BomRecipesTab({
     }
     setSaving(true)
     try {
+      const metadata = {
+        productType: recipeMeta.productType,
+        outputUnit: recipeMeta.outputUnit,
+        theoreticalWeightGrams: recipeMeta.theoreticalWeightGrams ? Number(recipeMeta.theoreticalWeightGrams) : undefined,
+        machineProgram: recipeMeta.machineProgram || undefined,
+        pattern: recipeMeta.pattern || undefined,
+        gauge: recipeMeta.gauge ? Number(recipeMeta.gauge) : undefined,
+        estimatedMinutesPerUnit: recipeMeta.estimatedMinutesPerUnit ? Number(recipeMeta.estimatedMinutesPerUnit) : undefined,
+        expectedWastePercent: recipeMeta.expectedWastePercent ? Number(recipeMeta.expectedWastePercent) : undefined,
+      }
       if (editingBom) {
         await apiPatch(`/boms/${editingBom.id}`, {
           name: name.trim() || t('boms.defaultName'),
           items: validItems,
+          ...metadata,
         })
         setSuccessNotice(t('boms.updated'))
       } else {
@@ -141,6 +182,7 @@ export function BomRecipesTab({
           name: name.trim() || t('boms.defaultName'),
           isActive: true,
           items: validItems,
+          ...metadata,
         })
       }
       resetForm()
@@ -217,6 +259,18 @@ export function BomRecipesTab({
               ))}
             </select>
           </label>
+          <div className="machine-form__row">
+            <label>{t('boms.productType')}<select value={recipeMeta.productType} onChange={(event) => setRecipeMeta((value) => ({ ...value, productType: event.target.value }))}>{['STRIP', 'SCARF', 'WRISTBAND', 'COLLAR', 'CUFF', 'OTHER'].map((value) => <option key={value} value={value}>{t(`boms.productType.${value}`)}</option>)}</select></label>
+            <label>{t('boms.outputUnit')}<select value={recipeMeta.outputUnit} onChange={(event) => setRecipeMeta((value) => ({ ...value, outputUnit: event.target.value }))}><option value="PIECE">{t('requests.unit.PIECE')}</option><option value="METER">{t('requests.unit.METER')}</option></select></label>
+            <label>{t('boms.theoreticalGrams')}<input type="number" min="0.0001" step="0.0001" value={recipeMeta.theoreticalWeightGrams} onChange={(event) => setRecipeMeta((value) => ({ ...value, theoreticalWeightGrams: event.target.value }))} /></label>
+          </div>
+          <div className="machine-form__row">
+            <label>{t('boms.machineProgram')}<input value={recipeMeta.machineProgram} onChange={(event) => setRecipeMeta((value) => ({ ...value, machineProgram: event.target.value }))} /></label>
+            <label>{t('boms.pattern')}<input value={recipeMeta.pattern} onChange={(event) => setRecipeMeta((value) => ({ ...value, pattern: event.target.value }))} /></label>
+            <label>{t('boms.gauge')}<input type="number" min="1" value={recipeMeta.gauge} onChange={(event) => setRecipeMeta((value) => ({ ...value, gauge: event.target.value }))} /></label>
+            <label>{t('boms.estimatedTime')}<input type="number" min="0.001" step="0.001" value={recipeMeta.estimatedMinutesPerUnit} onChange={(event) => setRecipeMeta((value) => ({ ...value, estimatedMinutesPerUnit: event.target.value }))} /></label>
+            <label>{t('boms.expectedWaste')}<input type="number" min="0" max="100" step="0.01" value={recipeMeta.expectedWastePercent} onChange={(event) => setRecipeMeta((value) => ({ ...value, expectedWastePercent: event.target.value }))} /></label>
+          </div>
           <label>
             {t('boms.name')}
             <input value={name} onChange={(e) => setName(e.target.value)} />
@@ -282,6 +336,10 @@ export function BomRecipesTab({
                 style={{ width: 80 }}
                 title={t('boms.waste')}
               />
+              <input placeholder={t('boms.yarnMaterial')} value={item.yarnMaterial ?? ''} onChange={(event) => { const next = [...items]; next[index] = { ...item, yarnMaterial: event.target.value }; setItems(next) }} />
+              <input placeholder={t('boms.yarnColor')} value={item.yarnColor ?? ''} onChange={(event) => { const next = [...items]; next[index] = { ...item, yarnColor: event.target.value }; setItems(next) }} />
+              <input placeholder={t('boms.yarnCount')} value={item.yarnCount ?? ''} onChange={(event) => { const next = [...items]; next[index] = { ...item, yarnCount: event.target.value }; setItems(next) }} />
+              <input type="number" min="1" placeholder={t('boms.denier')} value={item.denier ?? ''} onChange={(event) => { const next = [...items]; next[index] = { ...item, denier: event.target.value ? Number(event.target.value) : null }; setItems(next) }} style={{ width: 95 }} />
             </div>
           ))}
           <div className="form-actions">

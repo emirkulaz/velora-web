@@ -76,4 +76,30 @@ describe('central API client', () => {
       message: 'Sunucu işlemi tamamlayamadı. Lütfen daha sonra tekrar deneyin.',
     })
   })
+
+  it('retries one transient GET failure without duplicating write requests', async () => {
+    const fetchMock = vi
+      .spyOn(window, 'fetch')
+      .mockRejectedValueOnce(new TypeError('network'))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+
+    await expect(apiGet<{ ok: true }>('/health')).resolves.toEqual({ ok: true })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not retry a failed login POST', async () => {
+    const fetchMock = vi
+      .spyOn(window, 'fetch')
+      .mockRejectedValue(new TypeError('network'))
+
+    await expect(
+      apiPublicPost('/auth/login', { email: 'user@example.com', password: 'x' }),
+    ).rejects.toMatchObject({ status: 0 })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
 })

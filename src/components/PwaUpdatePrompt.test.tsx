@@ -32,4 +32,18 @@ describe('PwaUpdatePrompt', () => {
     await user.click(screen.getByRole('button', { name: 'Şimdi yenile' }))
     expect(updateServiceWorker).toHaveBeenCalledWith(true)
   })
+
+  it('keeps the application usable when the service worker update fails', async () => {
+    const user = userEvent.setup()
+    updateServiceWorker.mockRejectedValueOnce(new Error('network'))
+    render(<PwaUpdatePrompt />)
+
+    onNeedRefresh?.()
+    await user.click(await screen.findByRole('button', { name: 'Şimdi yenile' }))
+
+    expect(
+      await screen.findByText('Güncelleme tamamlanamadı. Bağlantınızı kontrol edip tekrar deneyin.'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Şimdi yenile' })).toBeEnabled()
+  })
 })

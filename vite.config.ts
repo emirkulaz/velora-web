@@ -53,7 +53,6 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api(?:\/|$)/],
         globPatterns: ['**/*.{js,css,html,svg,png,ico,webp,woff2}'],
         globIgnores: [
-          '**/trikomex-textile-operations-hero.png',
           '**/demo/**',
         ],
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,

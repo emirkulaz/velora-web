@@ -42,18 +42,9 @@ const ACCOUNTING_OPERATOR_MENUS: MenuId[] = [
   'financeAi',
 ]
 
-const ACCOUNTING_OPERATIONS_MENUS: MenuId[] = [
-  'overview',
-  'dailyWork',
-  'customers',
-  'customerRequests',
-  'orders',
-  'inventory',
-  'yarnInventory',
-  'production',
-  'finance',
-  'financeAi',
-]
+// Muhasebe & Operasyon kullanıcısı bütün operasyonu görür;
+// yönetimsel yazma izinleri yine her modülün kendi guard'ında sınırlıdır.
+const ACCOUNTING_OPERATIONS_MENUS: MenuId[] = [...ALL_MENUS]
 
 const ORDER_WRITE_ROLES: AppUserRole[] = [
   'ADMIN',

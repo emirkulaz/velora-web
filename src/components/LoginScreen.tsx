@@ -165,6 +165,7 @@ export function LoginScreen({
             <input
               type="text"
               dir="ltr"
+              placeholder={t('login.identifierPlaceholder')}
               value={login}
               onChange={(event) => setLogin(event.target.value)}
               autoComplete="username"

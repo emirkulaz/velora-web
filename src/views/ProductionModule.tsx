@@ -10,6 +10,7 @@ import type { CompanyPresentation } from '../data/companyBranding'
 import { algiersYmd } from '../data/dates'
 import { useI18n } from '../i18n/I18nProvider'
 import { BomRecipesTab } from './BomRecipesTab'
+import { MachineProductionTab } from './MachineProductionTab'
 
 type ProductOption = {
   id: number
@@ -101,7 +102,7 @@ export function ProductionModule({
     order: ProductionOrder
     status: ProductionOrder['status']
   } | null>(null)
-  const [tab, setTab] = useState<'orders' | 'boms'>('orders')
+  const [tab, setTab] = useState<'orders' | 'boms' | 'machines'>('orders')
   const [detail, setDetail] = useState<ProductionOrder | null>(null)
   const [actuals, setActuals] = useState<Record<number, string>>({})
   const [wastes, setWastes] = useState<Record<number, string>>({})
@@ -338,8 +339,16 @@ export function ProductionModule({
         >
           {t('production.recipesTab')}
         </button>
+        <button
+          type="button"
+          className={tab === 'machines' ? 'module-tab module-tab--active' : 'module-tab'}
+          onClick={() => setTab('machines')}
+        >
+          {t('production.machinesTab')}
+        </button>
       </div>
       {tab === 'boms' && <BomRecipesTab company={company} canWrite={canWrite} />}
+      {tab === 'machines' && <MachineProductionTab canWrite={canWrite} />}
       {tab === 'orders' && (
       <>
       <ModuleSummary

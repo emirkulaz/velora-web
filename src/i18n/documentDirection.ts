@@ -3,16 +3,14 @@ import { getActiveUiLanguage, setActiveUiLanguage } from './uiLanguage'
 /**
  * Yön yalnızca uygulamanın seçili diline bağlıdır.
  * Input değeri, klavye veya içerik tahmini kullanılmaz.
- * tr / en / fr → ltr (Arapça bu düzeltmede etkinleştirilmez).
+ * tr / en / fr → ltr, ar → rtl.
  */
 export function getUiTextDirection(
   lang: string | null | undefined = getActiveUiLanguage(),
 ): 'ltr' | 'rtl' {
   const normalized = (lang || 'tr').trim().toLowerCase()
   if (normalized === 'ar' || normalized.startsWith('ar-')) {
-    // Arapça modu bu aşamada geliştirilmiyor; TR arayüzü kalıcı LTR.
-    // İleride ar seçildiğinde rtl dönecek — şimdilik ltr zorla.
-    return 'ltr'
+    return 'rtl'
   }
   return 'ltr'
 }

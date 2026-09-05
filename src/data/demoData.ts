@@ -1,15 +1,12 @@
-import type {
-  Customer,
-  FinanceTransaction,
-  InventoryItem,
-  MenuId,
-  MenuItem,
-  Order,
-  Product,
-  ProductionOrder,
-} from './types'
+import type { MenuId, MenuItem } from './types'
 
-export type { Customer, FinanceTransaction, InventoryItem, MenuId, MenuItem, Order, Product, ProductionOrder }
+export type { MenuId, MenuItem }
+
+export interface MenuGroup {
+  id: 'workspace' | 'operations' | 'finance' | 'management'
+  labelKey: string
+  items: MenuId[]
+}
 
 export const menuItems: MenuItem[] = [
   { id: 'overview', label: 'Genel Bakış', icon: 'grid' },
@@ -28,73 +25,34 @@ export const menuItems: MenuItem[] = [
   { id: 'userManagement', label: 'Kullanıcı Yönetimi', icon: 'users' },
 ]
 
-export const menuTitles: Record<MenuId, string> = {
-  overview: 'Genel Bakış',
-  dailyWork: 'Günlük İşler',
-  customers: 'Müşteriler',
-  customerRequests: 'Müşteri Talepleri',
-  products: 'Ürünler',
-  orders: 'Siparişler',
-  inventory: 'Stok',
-  yarnInventory: 'İplik Stoğu',
-  production: 'Üretim',
-  costCalculation: 'Maliyet Hesaplama',
-  finance: 'Finans',
-  financeAi: 'Finans Asistanı',
-  users: 'Çalışanlar · vardiya, izin ve planlama',
-  userManagement: 'Kullanıcı Yönetimi · hesaplar ve yetkiler',
-}
-
-/** Placeholder stats — gerçek API bağlanana kadar sıfır. */
-export const stats = [
-  { label: 'Toplam Satış', value: '0', unit: 'DZD', change: '—', trend: 'up' as const, icon: 'sales' },
-  { label: 'Aktif Sipariş', value: '0', unit: 'adet', change: '—', trend: 'up' as const, icon: 'orders' },
-  { label: 'Stok Uyarısı', value: '0', unit: 'ürün', change: '—', trend: 'down' as const, icon: 'alert' },
-  { label: 'Üretim Durumu', value: '0', unit: '%', change: '—', trend: 'up' as const, icon: 'production' },
+export const menuGroups: MenuGroup[] = [
+  {
+    id: 'workspace',
+    labelKey: 'nav.group.workspace',
+    items: ['overview', 'dailyWork'],
+  },
+  {
+    id: 'operations',
+    labelKey: 'nav.group.operations',
+    items: [
+      'customers',
+      'customerRequests',
+      'products',
+      'orders',
+      'inventory',
+      'yarnInventory',
+      'production',
+      'costCalculation',
+    ],
+  },
+  {
+    id: 'finance',
+    labelKey: 'nav.group.finance',
+    items: ['finance', 'financeAi'],
+  },
+  {
+    id: 'management',
+    labelKey: 'nav.group.management',
+    items: ['users', 'userManagement'],
+  },
 ]
-
-export const recentOrders: Order[] = []
-export const allOrders: Order[] = []
-export const productionLines: Array<{
-  name: string
-  progress: number
-  status: string
-  output: string
-  shift: string
-  workers: number
-  target: string
-}> = []
-export const productionOrders: ProductionOrder[] = []
-export const customers: Customer[] = []
-export const products: Product[] = []
-export const productCategories = ['Tümü']
-export const inventory: InventoryItem[] = []
-export const financeSummary = [
-  { label: 'Tahsilatlar', value: '0', unit: 'DZD' },
-  { label: 'Ödemeler', value: '0', unit: 'DZD' },
-  { label: 'Alacaklar', value: '0', unit: 'DZD' },
-  { label: 'Geciken Ödeme', value: '0', unit: 'DZD' },
-]
-export const financeTransactions: FinanceTransaction[] = []
-export const overduePayments: Array<{
-  customer: string
-  amount: string
-  dueDate: string
-  daysLate: number
-}> = []
-
-export const orderStatusFilters = ['Tümü', 'Onay Bekliyor', 'Üretimde', 'Sevk Edildi', 'Tamamlandı']
-
-export const CRITICAL_ALERTS: Array<{ id: string; text: string; action: string }> = []
-
-export const QUICK_COMMANDS = [
-  'Kasadaki toplam bakiye nedir?',
-  'Son 5 kasa hareketini özetle.',
-  'Bakiyesi en yüksek müşterileri göster.',
-  'Stoku azalan ürünleri göster.',
-  'Bugünkü üretimi özetle.',
-] as const
-
-export function matchesSearch(text: string, query: string): boolean {
-  return text.toLowerCase().includes(query.toLowerCase().trim())
-}

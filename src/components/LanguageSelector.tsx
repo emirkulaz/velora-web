@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useI18n, type UiLanguage } from '../i18n/I18nProvider'
 
-const LANGUAGES: UiLanguage[] = ['tr', 'fr', 'en']
+const LANGUAGES: UiLanguage[] = ['tr', 'fr', 'en', 'ar']
 
 function LanguageFlag({ code }: { code: UiLanguage }) {
   if (code === 'tr') {
@@ -23,6 +23,16 @@ function LanguageFlag({ code }: { code: UiLanguage }) {
         <rect width="8" height="16" fill="#002395" />
         <rect x="8" width="8" height="16" fill="#fff" />
         <rect x="16" width="8" height="16" fill="#ED2939" />
+      </svg>
+    )
+  }
+  if (code === 'ar') {
+    return (
+      <svg className="language-selector__flag" viewBox="0 0 24 16" aria-hidden="true">
+        <rect width="12" height="16" fill="#006233" />
+        <rect x="12" width="12" height="16" fill="#fff" />
+        <path d="M14.5 4.2a4.2 4.2 0 1 0 0 7.6 3.45 3.45 0 1 1 0-7.6" fill="#D21034" />
+        <polygon points="14.7,8 17.3,7.15 15.7,9.35 15.7,6.65 17.3,8.85" fill="#D21034" />
       </svg>
     )
   }
