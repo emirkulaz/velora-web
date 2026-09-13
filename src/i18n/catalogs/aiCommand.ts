@@ -1,11 +1,15 @@
 export const aiCommandTranslations = {
   tr: {
+    'ai.suggest.createProduct': 'Yeni ürün oluştur',
+    'ai.suggest.createOrder': 'Yeni sipariş oluştur',
+    'ai.suggest.stockInbound': 'Stok girişi ekle',
+    'ai.suggest.stockOutbound': 'Stok çıkışı ekle',
     'ai.ask': "VEXOR'a Sor",
     'ai.placeholder': "VEXOR'a sorun",
     'ai.greetingNamed': 'Nasıl gidiyor, {name}?',
     'ai.greeting': 'Bugün nasıl yardımcı olabilirim?',
     'ai.subtitle':
-      'Doğal dille sorun; VEXOR şirket verinizden tool ile cevaplar, yazmalarda onay ister.',
+      'Şirket verilerinizi sorun; ürün, sipariş ve stok işlemlerini önizleyip onaylayın.',
     'ai.suggest.cash': 'Kasada ne kadar para var?',
     'ai.suggest.collections': 'Bugün ne kadar tahsilat yaptık?',
     'ai.suggest.stock': 'Stok durumu nedir?',
@@ -65,6 +69,10 @@ export const aiCommandTranslations = {
     'ai.confidence.UNAVAILABLE': 'Mevcut değil',
   },
   fr: {
+    'ai.suggest.createProduct': 'Créer un produit',
+    'ai.suggest.createOrder': 'Créer une commande',
+    'ai.suggest.stockInbound': 'Ajouter une entrée de stock',
+    'ai.suggest.stockOutbound': 'Ajouter une sortie de stock',
     'ai.ask': 'Demander à VEXOR',
     'ai.placeholder': 'Demandez à VEXOR',
     'ai.greetingNamed': 'Comment allez-vous, {name} ?',
@@ -129,6 +137,10 @@ export const aiCommandTranslations = {
     'ai.confidence.UNAVAILABLE': 'Indisponible',
   },
   en: {
+    'ai.suggest.createProduct': 'Create a new product',
+    'ai.suggest.createOrder': 'Create a new order',
+    'ai.suggest.stockInbound': 'Add an inventory receipt',
+    'ai.suggest.stockOutbound': 'Add an inventory issue',
     'ai.ask': 'Ask VEXOR',
     'ai.placeholder': 'Ask VEXOR',
     'ai.greetingNamed': 'How is it going, {name}?',

@@ -73,6 +73,10 @@ const AI_SUGGESTIONS: SuggestionDef[] = [
   { key: 'absent', domain: 'workforce' },
   { key: 'sales', domain: 'finance' },
   { key: 'risks', domain: 'risks' },
+  { key: 'createProduct', domain: 'stock' },
+  { key: 'createOrder', domain: 'orders' },
+  { key: 'stockInbound', domain: 'stock' },
+  { key: 'stockOutbound', domain: 'stock' },
 ]
 
 const INITIAL_SUGGESTION_LIMIT = 10
