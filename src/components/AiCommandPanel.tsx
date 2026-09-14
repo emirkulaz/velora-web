@@ -106,11 +106,14 @@ function mapErrorMessage(error: unknown, t: (key: string) => string): string {
 export function AiCommandPanel({
   userName,
   userRole,
+  onRefresh,
 }: {
   userName?: string
   userRole?: AppUserRole | null
+  onRefresh?: () => void
 }) {
   const { t, formatDate } = useI18n()
+  const [conversationId] = useState(() => crypto.randomUUID())
   const [commandInput, setCommandInput] = useState('')
   const [response, setResponse] = useState<AssistantResponse | null>(null)
   const [error, setError] = useState('')
@@ -177,7 +180,7 @@ export function AiCommandPanel({
       const data = await apiRequest<ErpChatResponse>('/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: trimmed }),
+        body: JSON.stringify({ message: trimmed, conversationId }),
       })
 
       lastSentRef.current = trimmed
@@ -464,7 +467,10 @@ export function AiCommandPanel({
           )}
 
           {preview?.applied && (
-            <p className="ai-write-preview__applied">{t('ai.applied')}</p>
+            <div className="ai-write-preview__applied">
+              <p>{t('ai.applied')}</p>
+              {onRefresh && <button type="button" className="btn btn--ghost" onClick={onRefresh}>{t('ai.refreshView')}</button>}
+            </div>
           )}
         </article>
       )}

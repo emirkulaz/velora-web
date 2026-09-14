@@ -109,7 +109,7 @@ describe('AiCommandPanel suggestions', () => {
         '/ai/chat',
         expect.objectContaining({
           method: 'POST',
-          body: JSON.stringify({ message: 'Kasada ne kadar para var?' }),
+          body: expect.stringContaining('"conversationId":'),
         }),
       )
     })

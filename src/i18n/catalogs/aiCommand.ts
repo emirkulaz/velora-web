@@ -41,6 +41,7 @@ export const aiCommandTranslations = {
     'ai.recordCount': '{count} kayıt',
     'ai.preview': 'İşlem önizleme',
     'ai.confirmApply': 'Onayla ve uygula',
+    'ai.refreshView': 'İşlem tamamlandı; açık ekranı yenile',
     'ai.completeDetails': 'Onay için ürün, miktar veya müşteri bilgisini netleştirin.',
     'ai.applied': 'Onaylı işlem uygulandı.',
     'ai.confirmTitle': 'İşlemi onayla',
@@ -106,6 +107,7 @@ export const aiCommandTranslations = {
     'ai.recordCount': '{count} enregistrements',
     'ai.preview': 'Aperçu de l’opération',
     'ai.confirmApply': 'Confirmer et appliquer',
+    'ai.refreshView': 'Opération terminée ; actualiser la vue',
     'ai.completeDetails':
       'Précisez le produit, la quantité ou le client avant de confirmer.',
     'ai.applied': 'L’opération confirmée a été appliquée.',
@@ -169,6 +171,7 @@ export const aiCommandTranslations = {
     'ai.recordCount': '{count} records',
     'ai.preview': 'Action preview',
     'ai.confirmApply': 'Confirm and apply',
+    'ai.refreshView': 'Operation completed; refresh current view',
     'ai.completeDetails': 'Clarify the product, quantity, or customer before confirming.',
     'ai.applied': 'The confirmed action was applied.',
     'ai.confirmTitle': 'Confirm action',

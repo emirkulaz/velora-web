@@ -1,0 +1,46 @@
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { AiCommandPanel } from './AiCommandPanel'
+const { apiRequest, apiPost } = vi.hoisted(() => ({ apiRequest: vi.fn(), apiPost: vi.fn() }))
+vi.mock('../data/api', () => ({ ApiError: class extends Error {}, apiRequest, apiPost, apiDownload: vi.fn() }))
+vi.mock('../i18n/I18nProvider', () => ({ useI18n: () => ({ t: (key: string) => key, formatDate: (value: string) => value }) }))
+vi.mock('../hooks/useSpeechToText', () => ({ useSpeechToText: () => ({ isSupported: false, isListening: false }) }))
+const reply = { answer: 'Result', generatedAt: '2026-09-14', dataFreshness: '2026-09-14' }
+beforeEach(() => { apiRequest.mockReset(); apiPost.mockReset() })
+afterEach(cleanup)
+async function send() {
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'stok girişi yap' } })
+  fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', shiftKey: false })
+  await screen.findByText('Result')
+}
+it('keeps a conversation ID within a panel and isolates a new panel', async () => {
+  apiRequest.mockResolvedValue(reply)
+  const view = render(<AiCommandPanel />)
+  await send()
+  const first = JSON.parse(apiRequest.mock.calls[0][1].body)
+  expect(first.message).toBe('stok girişi yap')
+  expect(first.conversationId).toMatch(/^[0-9a-f-]{36}$/)
+  await send()
+  expect(JSON.parse(apiRequest.mock.calls[1][1].body).conversationId).toBe(first.conversationId)
+  view.unmount()
+  render(<AiCommandPanel />)
+  await send()
+  expect(JSON.parse(apiRequest.mock.calls[2][1].body).conversationId).not.toBe(first.conversationId)
+})
+it.each([true, false])('offers refresh only when confirmation reports applied=%s', async (applied) => {
+  const onRefresh = vi.fn()
+  apiRequest.mockResolvedValue({ ...reply, writePreview: { applied: false, previewToken: 'token', confirmationRequired: true, ready: true, lines: ['25 kg Pamuk'], notice: '', preview: '' } })
+  apiPost.mockResolvedValue({ ...reply, writePreview: { applied } })
+  render(<AiCommandPanel onRefresh={onRefresh} />)
+  await send()
+  expect(screen.queryByText('ai.refreshView')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'ai.confirmApply' }))
+  fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'ai.confirm' }))
+  await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/ai/confirm-write', { previewToken: 'token' }))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+  expect(onRefresh).not.toHaveBeenCalled()
+  if (applied) {
+    fireEvent.click(screen.getByRole('button', { name: 'ai.refreshView' }))
+    expect(onRefresh).toHaveBeenCalledOnce()
+  } else expect(screen.queryByText('ai.refreshView')).not.toBeInTheDocument()
+})

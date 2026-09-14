@@ -76,6 +76,7 @@ function initials(name: string) {
 
 function App() {
   const { language, t, setLanguage } = useI18n()
+  const [moduleRevision, setModuleRevision] = useState(0)
   const [activeMenu, setActiveMenu] = useState<MenuId>('overview')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
@@ -471,7 +472,7 @@ function App() {
           )}
           <SectionErrorBoundary resetKey="ai-command-panel">
             <Suspense fallback={<p className="demo-notice">{t('common.loading')}</p>}>
-              <AiCommandPanel userName={currentUser?.name} userRole={currentUser?.role} />
+              <AiCommandPanel key={currentUser?.email} userName={currentUser?.name} userRole={currentUser?.role} onRefresh={() => setModuleRevision((value) => value + 1)} />
             </Suspense>
           </SectionErrorBoundary>
           {activeMenu === 'dailyWork' && (
@@ -482,7 +483,7 @@ function App() {
             </SectionErrorBoundary>
           )}
           <div className="module-area">
-            <SectionErrorBoundary resetKey={activeMenu}>
+            <SectionErrorBoundary key={`${activeMenu}:${moduleRevision}`} resetKey={activeMenu}>
               <Suspense fallback={<p className="demo-notice">{t('common.loading')}</p>}>
               {renderModule(
                 activeMenu,

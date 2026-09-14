@@ -31,15 +31,16 @@ export function DailyWorkModule({
     [],
   )
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
+      setLoading(true)
+      setError('')
       try {
         const [requests, orders] = await Promise.all([
-          apiGet<Array<{ status: string }>>('/customer-requests').catch(
-            () => [] as Array<{ status: string }>,
-          ),
+          apiGet<Array<{ status: string }>>('/customer-requests'),
           apiGet<
             Array<{
               id: number
@@ -49,7 +50,7 @@ export function DailyWorkModule({
               quantity: number
               deliveredQuantity: number
             }>
-          >('/orders').catch(() => []),
+          >('/orders'),
         ])
         if (cancelled) return
         setOpenRequests(
@@ -79,10 +80,12 @@ export function DailyWorkModule({
                 Number(o.quantity) - Number(o.deliveredQuantity ?? 0),
               ),
             }))
-            .slice(0, 8),
+            .filter((order) => order.remainingQty > 0),
         )
       } catch {
         if (!cancelled) setError(t('daily.loadError'))
+      } finally {
+        if (!cancelled) setLoading(false)
       }
     })()
     return () => {
@@ -101,10 +104,10 @@ export function DailyWorkModule({
 
       <ModuleSummary
         items={[
-          { label: t('daily.openRequests'), value: String(openRequests) },
+          { label: t('daily.openRequests'), value: loading ? '…' : error ? '—' : String(openRequests) },
           {
             label: t('daily.pendingDeliveries'),
-            value: String(pendingDeliveries.length),
+            value: loading ? '…' : error ? '—' : String(pendingDeliveries.length),
           },
           { label: t('daily.payrollReview'), value: '—' },
           { label: t('daily.pendingExpense'), value: '—' },
@@ -123,7 +126,9 @@ export function DailyWorkModule({
             {t('daily.goOrders')}
           </button>
         </div>
-        {pendingDeliveries.length === 0 ? (
+        {loading ? (
+          <p role="status">{t('common.loading')}</p>
+        ) : error ? null : pendingDeliveries.length === 0 ? (
           <p className="empty-state">{t('daily.noDeliveries')}</p>
         ) : (
           <div className="table-wrap">
@@ -137,7 +142,7 @@ export function DailyWorkModule({
                 </tr>
               </thead>
               <tbody>
-                {pendingDeliveries.map((row) => (
+                {pendingDeliveries.slice(0, 8).map((row) => (
                   <tr key={row.id}>
                     <td>{row.orderNumber}</td>
                     <td>{row.customerName ?? '—'}</td>
