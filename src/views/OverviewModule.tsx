@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { ReportButton } from '../components/ReportButton'
 import { apiGet } from '../data/api'
-import type { AppUserRole } from '../data/roles'
+import { canAccessMenu, type AppUserRole } from '../data/roles'
+import { OrderOverview } from './OrderOverview'
 import type { MenuId } from '../data/types'
 import { useI18n } from '../i18n/I18nProvider'
 
@@ -34,7 +35,7 @@ function CashChart({ data, ariaLabel }: { data:Dashboard['charts']['cashFlow']; 
 
 function ProductBars({ data, currency, formatCurrency, emptyLabel }: { data:Dashboard['charts']['topProducts'];currency:string;formatCurrency:CurrencyFormatter;emptyLabel:string }) { const max=Math.max(...data.map(d=>d.value),1); return <div className="product-bars">{data.length?data.map((d,i)=><div className="product-bar" key={`${d.name}-${i}`}><div><span>{d.name}</span><strong>{formatCurrency(d.value,currency)}</strong></div><div className="product-bar__track"><span style={{width:`${Math.max(4,d.value/max*100)}%`}}/></div></div>):<p className="empty-state">{emptyLabel}</p>}</div> }
 
-export function OverviewModule({ onNavigate }: { role?:AppUserRole|null; onNavigate?:(id:MenuId)=>void }) {
+function ExecutiveOverview({ onNavigate }: { role?:AppUserRole|null; onNavigate?:(id:MenuId)=>void }) {
   const { t, formatCurrency, formatDate, formatNumber } = useI18n()
   const [data,setData]=useState<Dashboard|null>(null),[failed,setFailed]=useState(false),[loading,setLoading]=useState(true)
   useEffect(()=>{let live=true; apiGet<Dashboard>('/dashboard/executive').then(r=>{if(live)setData(r)}).catch(()=>{if(live)setFailed(true)}).finally(()=>{if(live)setLoading(false)}); return()=>{live=false}},[])
@@ -61,4 +62,8 @@ export function OverviewModule({ onNavigate }: { role?:AppUserRole|null; onNavig
     <section className="executive-bottom"><article className="executive-panel"><header><div><span>{t('overview.liveFlow')}</span><h2>{t('overview.recentActivity')}</h2></div></header><div className="activity-list">{data.recent.map(r=><button key={r.id} type="button" onClick={()=>onNavigate?.(r.type==='Sipariş'?'orders':r.type==='Gider'||r.type==='Tahsilat'?'finance':'overview')}><span className={`activity-dot activity-dot--${r.type.toLocaleLowerCase('tr-TR')}`}/><span><strong>{r.title}</strong><small>{r.type} · {formatDate(r.at)}</small></span><b className={r.amount<0?'negative':''}>{formatCurrency(r.amount,data.currency)}</b></button>)}</div></article><article className="executive-panel"><header><div><span>{t('overview.needsAttention')}</span><h2>{t('overview.managementAlerts')}</h2></div><b className="alert-count">{formatNumber(data.alerts.length)}</b></header><div className="alert-list">{data.alerts.length?data.alerts.map((a,i)=><button key={i} className={a.severity==='critical'?'is-critical':''} onClick={()=>onNavigate?.(a.target)}><span>!</span><div><strong>{a.title}</strong><small>{a.detail}</small></div></button>):<p className="empty-state">{t('overview.noCriticalAlerts')}</p>}</div></article></section>
     <section className="ai-daily-summary"><div className="ai-daily-summary__mark">V</div><div><span>{t('overview.aiSummary')}</span><h2>{data.aiSummary}</h2><p>{t('overview.source',{date:formatDate(`${data.date}T12:00:00`)})}</p></div><button onClick={()=>document.querySelector<HTMLTextAreaElement>('.ai-command__input')?.focus()}>{t('overview.askVexor')}</button></section>
   </div>
+}
+
+export function OverviewModule({ role, onNavigate }: { role?:AppUserRole|null; onNavigate?:(id:MenuId)=>void }) {
+  return canAccessMenu(role, 'orders') ? <OrderOverview onNavigate={onNavigate} /> : <ExecutiveOverview onNavigate={onNavigate} />
 }

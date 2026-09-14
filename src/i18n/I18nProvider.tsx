@@ -12,6 +12,7 @@ import { applyDocumentDirection } from './documentDirection'
 import { apiPatch } from '../data/api'
 import { customerTranslations } from './catalogs/customers'
 import { customerRequestTranslations } from './catalogs/customerRequests'
+import { orderOverviewTranslations } from './catalogs/orderOverview'
 import { orderTranslations } from './catalogs/orders'
 import { productTranslations } from './catalogs/products'
 import { inventoryTranslations } from './catalogs/inventory'
@@ -20,7 +21,7 @@ import { bomTranslations } from './catalogs/boms'
 import { financeTranslations } from './catalogs/finance'
 import { financeDebtTranslations } from './catalogs/financeDebts'
 import { cashFlowTranslations } from './catalogs/cashFlow'
-import { aiCommandTranslations } from './catalogs/aiCommand'
+import { aiCommandTranslations, arabicAiTranslations } from './catalogs/aiCommand'
 import { loginExperienceTranslations } from './catalogs/loginExperience'
 import { userManagementTranslations } from './catalogs/userManagement'
 import { workforceTranslations } from './catalogs/workforce'
@@ -49,6 +50,7 @@ const baseTranslations: Record<'tr' | 'fr' | 'en', Record<string, string>> = {
     ...customerTranslations.tr,
     ...customerRequestTranslations.tr,
     ...orderTranslations.tr,
+    ...orderOverviewTranslations.tr,
     ...productTranslations.tr,
     ...inventoryTranslations.tr,
     ...productionTranslations.tr,
@@ -238,6 +240,7 @@ const baseTranslations: Record<'tr' | 'fr' | 'en', Record<string, string>> = {
     ...customerTranslations.fr,
     ...customerRequestTranslations.fr,
     ...orderTranslations.fr,
+    ...orderOverviewTranslations.fr,
     ...productTranslations.fr,
     ...inventoryTranslations.fr,
     ...productionTranslations.fr,
@@ -427,6 +430,7 @@ const baseTranslations: Record<'tr' | 'fr' | 'en', Record<string, string>> = {
     ...customerTranslations.en,
     ...customerRequestTranslations.en,
     ...orderTranslations.en,
+    ...orderOverviewTranslations.en,
     ...productTranslations.en,
     ...inventoryTranslations.en,
     ...productionTranslations.en,
@@ -618,6 +622,20 @@ export const translations: Record<UiLanguage, Record<string, string>> = {
   ...baseTranslations,
   ar: {
     ...baseTranslations.en,
+    ...arabicAiTranslations,
+    ...orderOverviewTranslations.ar,
+    'orders.status.DRAFT': 'مسودة',
+    'orders.status.CONFIRMED': 'مؤكد',
+    'orders.status.IN_PRODUCTION': 'قيد الإنتاج',
+    'orders.status.READY': 'جاهز',
+    'orders.status.PARTIALLY_DELIVERED': 'تم التسليم جزئياً',
+    'orders.status.DELIVERED': 'تم التسليم',
+    'orders.status.CANCELLED': 'ملغى',
+    'orders.noLinkedProduct': 'لا يوجد منتج مرتبط',
+    'orders.total': 'الإجمالي',
+    'orders.orderDate': 'تاريخ الطلب',
+    'orders.expectedDelivery': 'موعد التسليم',
+    'orders.loadError': 'تعذر تحميل الطلبات. تحقق من الصلاحيات أو الاتصال.',
     'language.tr': 'Türkçe',
     'language.fr': 'Français',
     'language.en': 'English',

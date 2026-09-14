@@ -45,7 +45,7 @@ describe('OverviewModule localization', () => {
 
     render(
       <I18nProvider>
-        <OverviewModule />
+        <OverviewModule role="ACCOUNTING_OPERATOR" />
       </I18nProvider>,
     )
 

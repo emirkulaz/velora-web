@@ -470,11 +470,13 @@ function App() {
               </Suspense>
             </SectionErrorBoundary>
           )}
+          {activeMenu !== 'overview' && (
           <SectionErrorBoundary resetKey="ai-command-panel">
             <Suspense fallback={<p className="demo-notice">{t('common.loading')}</p>}>
               <AiCommandPanel key={currentUser?.email} userName={currentUser?.name} userRole={currentUser?.role} onRefresh={() => setModuleRevision((value) => value + 1)} />
             </Suspense>
           </SectionErrorBoundary>
+          )}
           {activeMenu === 'dailyWork' && (
             <SectionErrorBoundary resetKey="daily-work-actions">
               <Suspense fallback={null}>
@@ -495,6 +497,13 @@ function App() {
               </Suspense>
             </SectionErrorBoundary>
           </div>
+          {activeMenu === 'overview' && (
+          <SectionErrorBoundary resetKey="ai-command-panel">
+            <Suspense fallback={<p className="demo-notice">{t('common.loading')}</p>}>
+              <AiCommandPanel key={currentUser?.email} userName={currentUser?.name} userRole={currentUser?.role} onRefresh={() => setModuleRevision((value) => value + 1)} />
+            </Suspense>
+          </SectionErrorBoundary>
+          )}
           <footer className="content-credit" aria-label="Credits">
             Created by Emir Kulaz
           </footer>

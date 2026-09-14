@@ -6,6 +6,7 @@ import {
   type AppUserRole,
 } from '../data/roles'
 import { useSpeechToText } from '../hooks/useSpeechToText'
+import { suggestErpSpelling } from '../data/aiUnderstanding'
 import { ConfirmDialog } from './ConfirmDialog'
 import { Icon } from './Icons'
 import { useI18n } from '../i18n/I18nProvider'
@@ -112,7 +113,7 @@ export function AiCommandPanel({
   userRole?: AppUserRole | null
   onRefresh?: () => void
 }) {
-  const { t, formatDate } = useI18n()
+  const { t, formatDate, formatNumber, locale } = useI18n()
   const [conversationId] = useState(() => crypto.randomUUID())
   const [commandInput, setCommandInput] = useState('')
   const [response, setResponse] = useState<AssistantResponse | null>(null)
@@ -124,12 +125,15 @@ export function AiCommandPanel({
   const [quickOpen, setQuickOpen] = useState(false)
   const [conversationStarted, setConversationStarted] = useState(false)
   const commandInputRef = useRef<HTMLTextAreaElement>(null)
-  const lastSentRef = useRef('')
+  const requestBusyRef = useRef(false)
+  const [history, setHistory] = useState<AssistantResponse[]>([])
+  const [failedQuery, setFailedQuery] = useState('')
+  const [downloading, setDownloading] = useState(false)
   const voice = useSpeechToText((transcript) => {
-    lastSentRef.current = ''
+
     setCommandInput((current) => `${current}${current.trim() ? ' ' : ''}${transcript}`)
     commandInputRef.current?.focus()
-  })
+  }, locale)
 
   const filteredSuggestions = useMemo(() => {
     return AI_SUGGESTIONS.filter((item) =>
@@ -165,11 +169,12 @@ export function AiCommandPanel({
 
   const sendMessage = async (raw: string) => {
     const trimmed = raw.trim()
-    if (!trimmed || loading || confirming) return
+    if (!trimmed || requestBusyRef.current || confirming) return
+    requestBusyRef.current = true
 
     setCommandInput(trimmed)
     setError('')
-    setResponse(null)
+    setFailedQuery('')
     setConfirmOpen(false)
     setEvidenceOpen(false)
     setQuickOpen(false)
@@ -183,11 +188,14 @@ export function AiCommandPanel({
         body: JSON.stringify({ message: trimmed, conversationId }),
       })
 
-      lastSentRef.current = trimmed
+      if (response) setHistory((previous) => [...previous, response].slice(-19))
+      setCommandInput('')
       setResponse(mapResponse(trimmed, data))
     } catch (err) {
+      setFailedQuery(trimmed)
       setError(mapErrorMessage(err, t))
     } finally {
+      requestBusyRef.current = false
       setLoading(false)
     }
   }
@@ -227,7 +235,7 @@ export function AiCommandPanel({
   }
 
   const handleCommandKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault()
       void handleCommandSubmit()
     }
@@ -239,6 +247,7 @@ export function AiCommandPanel({
     !preview?.applied &&
     Boolean(preview?.previewToken) &&
     preview?.ready !== false
+  const spellingSuggestion = useMemo(() => suggestErpSpelling(commandInput), [commandInput])
   const firstName = userName?.trim().split(/\s+/)[0]
 
   return (
@@ -267,14 +276,10 @@ export function AiCommandPanel({
           ref={commandInputRef}
           className="ai-command__input"
           dir="ltr"
-          style={{
-            direction: 'ltr',
-            textAlign: 'left',
-            unicodeBidi: 'normal',
-          }}
+          style={{ direction: 'ltr', textAlign: 'left', unicodeBidi: 'normal' }}
           value={commandInput}
           onChange={(event) => {
-            lastSentRef.current = ''
+
             setCommandInput(event.target.value)
           }}
           onKeyDown={handleCommandKeyDown}
@@ -318,6 +323,12 @@ export function AiCommandPanel({
         </div>
       </div>
 
+      {spellingSuggestion && !loading && (
+        <button type="button" className="quick-chip" disabled={confirming}
+          onClick={() => { setCommandInput(spellingSuggestion); commandInputRef.current?.focus() }}>
+          {t('ai.spellingSuggestion', { text: spellingSuggestion })}
+        </button>
+      )}
       {showInlineSuggestions && (
         <div className="ai-command__suggestions" aria-label={t('ai.quickQuestions')}>
           {visibleSuggestions.map((item) => (
@@ -369,6 +380,14 @@ export function AiCommandPanel({
         </p>
       )}
 
+      {failedQuery && <button type="button" className="btn btn--ghost" disabled={loading || confirming} onClick={() => void sendMessage(failedQuery)}>{t('ai.retry')}</button>}
+      {history.map((item, index) => (
+        <article className="demo-response" key={index}>
+          <p className="demo-response__query">{t('ai.question')}: {item.query}</p>
+          <div className="demo-response__header"><span className="demo-response__badge">{t('ai.answer')}</span><span className="demo-response__time">{item.generatedAt}</span></div>
+          <div className="demo-response__body">{item.content.split('\n').map((line, i) => <p dir="auto" key={i}>{line || '\u00A0'}</p>)}</div>
+        </article>
+      ))}
       {response && (
         <article className="demo-response" aria-live="polite">
           <p className="demo-response__query">
@@ -388,8 +407,12 @@ export function AiCommandPanel({
             <button
               type="button"
               className="btn btn--report"
+              disabled={downloading}
               onClick={() =>
                 void (async () => {
+                  setDownloading(true)
+                  setError('')
+                  try {
                   const blob = await apiDownload(response.reportUrl!)
                   const url = URL.createObjectURL(blob)
                   const link = document.createElement('a')
@@ -397,6 +420,11 @@ export function AiCommandPanel({
                   link.download = 'vexor-ai-raporu.pdf'
                   link.click()
                   setTimeout(() => URL.revokeObjectURL(url), 1000)
+                  } catch (err) {
+                    setError(mapErrorMessage(err, t))
+                  } finally {
+                    setDownloading(false)
+                  }
                 })()
               }
             >
@@ -417,14 +445,14 @@ export function AiCommandPanel({
                 <div className="ai-evidence__details">
                   {response.evidence.map((item) => (
                     <div className="ai-evidence__item" key={`${item.metric}-${item.source}`}>
-                      <strong>{item.metric}</strong>
+                      <strong>{item.metric}: {typeof item.value === 'number' ? formatNumber(item.value) : item.value ?? '—'}</strong>
                       <span>
                         {item.source} · {t('ai.recordCount', { count: item.recordCount })} ·{' '}
                         {t(`ai.confidence.${item.confidence}`)}
                       </span>
                       {item.period && (
                         <span>
-                          {item.period.from} · {item.period.timezone ?? 'Africa/Algiers'}
+                          {item.period.from} → {item.period.to}{item.period.timezone ? ` · ${item.period.timezone}` : ''}
                         </span>
                       )}
                       {item.detail && <small>{item.detail}</small>}

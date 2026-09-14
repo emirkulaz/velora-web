@@ -34,9 +34,11 @@ function recognitionConstructor(): SpeechRecognitionConstructor | undefined {
   return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition
 }
 
-export function useSpeechToText(onText: (text: string) => void) {
+export function useSpeechToText(onText: (text: string) => void, language = 'tr-TR') {
   const [isListening, setIsListening] = useState(false)
   const [error, setError] = useState('')
+  const languageRef = useRef(language)
+  useEffect(() => { languageRef.current = language }, [language])
   const onTextRef = useRef(onText)
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
   const shouldListenRef = useRef(false)
@@ -67,7 +69,7 @@ export function useSpeechToText(onText: (text: string) => void) {
       if (!shouldListenRef.current) return
 
       const recognition = new Recognition()
-      recognition.lang = 'tr-TR'
+      recognition.lang = languageRef.current
       recognition.continuous = true
       recognition.interimResults = false
       recognition.onresult = (event) => {

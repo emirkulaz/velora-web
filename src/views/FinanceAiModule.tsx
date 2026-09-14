@@ -38,7 +38,7 @@ function daysAgoIso(days: number) {
 }
 
 export function FinanceAiModule() {
-  const { t, formatDate } = useI18n()
+  const { t, formatDate, locale } = useI18n()
   const quickPrompts = ['cash', 'expenses', 'unusual', 'collections', 'decrease'].map((key) => t(`financeAi.quick.${key}`))
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
@@ -51,7 +51,7 @@ export function FinanceAiModule() {
   const voice = useSpeechToText((transcript) => {
     lastPayloadRef.current = ''
     setInput((current) => `${current}${current.trim() ? ' ' : ''}${transcript}`)
-  })
+  }, locale)
 
   const send = async (rawMessage: string) => {
     const message = rawMessage.trim()
