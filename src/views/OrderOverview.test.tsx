@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../i18n/I18nProvider'
 import { OrderOverview } from './OrderOverview'
-import { OverviewModule } from './OverviewModule'
 const { apiGet } = vi.hoisted(() => ({ apiGet: vi.fn() }))
 vi.mock('../data/api', () => ({ apiGet, apiPatch: vi.fn() }))
 const base = {
@@ -66,12 +65,6 @@ describe('home order summary', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Yenile' }))
     await screen.findByRole('heading', { name: 'Yaka' })
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-  })
-  it('uses the order summary as the owner home without requesting executive finance data', async () => {
-    render(<I18nProvider><OverviewModule role="OWNER" /></I18nProvider>)
-    await screen.findByRole('heading', { name: 'Yaka' })
-    expect(apiGet).toHaveBeenCalledWith('/orders')
-    expect(apiGet).not.toHaveBeenCalledWith('/dashboard/executive')
   })
   it.each([['fr', 'Résumé des commandes'], ['ar', 'ملخص الطلبات']])('renders %s home text', async (language, title) => {
     localStorage.setItem('velora.uiLanguage', language)

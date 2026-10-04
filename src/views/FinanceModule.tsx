@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Modal } from '../components/Modal'
-import { ModuleSummary } from '../components/ModuleSummary'
 import { ModuleToolbar } from '../components/ModuleToolbar'
 import { SuccessToast } from '../components/Toast'
 import { ApiError, apiGet, apiPost } from '../data/api'
 import { useI18n } from '../i18n/I18nProvider'
 import { FinanceDebtsTab } from './FinanceDebtsTab'
 import { CashFlowTab } from './CashFlowTab'
+import { ReservePlanTab } from './ReservePlanTab'
+import { CashAccountForm } from '../components/CashAccountForm'
+import './Workspace.css'
 
 type Amount = number | string
 
@@ -31,6 +33,10 @@ interface CashAccountSummary {
   name: string
   currency: string
   balance: Amount
+  currentBalance?: Amount | null
+}
+function accountNeedsReview(account:CashAccountSummary):boolean {
+  return account.balance==null || !Number.isFinite(Number(account.balance)) || (account.currentBalance!=null && Math.abs(Number(account.currentBalance)-Number(account.balance))>0.01)
 }
 
 interface LedgerCustomerSummary {
@@ -62,7 +68,7 @@ const OPEN_CASH_FLAG = 'velora.finance.openCash'
 const OPEN_COLLECTION_FLAG = 'velora.finance.openCollection'
 const FINANCE_TAB_FLAG = 'velora.finance.tab'
 
-type FinanceTab = 'cash' | 'cashflow' | 'receivables' | 'debts' | 'expenses' | 'ledger'
+type FinanceTab = 'cash' | 'cashflow' | 'reserve' | 'receivables' | 'debts' | 'expenses' | 'ledger'
 
 function amount(value: Amount | null | undefined) {
   return Number(value ?? 0)
@@ -92,7 +98,7 @@ function normalizeAccounts(payload: unknown): CashAccountSummary[] {
 }
 
 export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
-  const { locale, t, formatDate, formatNumber } = useI18n()
+  const { locale, t, formatDate, formatNumber, formatCurrency } = useI18n()
   const formatAmount = useCallback(
     (value: Amount | null | undefined) =>
       formatNumber(amount(value), { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
@@ -156,6 +162,16 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
   }, [t])
 
   useEffect(() => {
+    try {
+      const storedAccount = sessionStorage.getItem('velora.finance.accountName')
+      if (storedAccount) {
+        const timer = window.setTimeout(() => { sessionStorage.removeItem('velora.finance.accountName'); setSearch(storedAccount) }, 0)
+        return () => window.clearTimeout(timer)
+      }
+    } catch { /* optional preference */ }
+  }, [])
+
+  useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0)
     return () => window.clearTimeout(timer)
   }, [load])
@@ -166,13 +182,13 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
       if (
         stored === 'cash' ||
         stored === 'cashflow' ||
+        stored === 'reserve' ||
         stored === 'receivables' ||
         stored === 'debts' ||
         stored === 'expenses' ||
         stored === 'ledger'
       ) {
-        sessionStorage.removeItem(FINANCE_TAB_FLAG)
-        const timer = window.setTimeout(() => setTab(stored), 0)
+        const timer = window.setTimeout(() => { sessionStorage.removeItem(FINANCE_TAB_FLAG); setTab(stored) }, 0)
         return () => window.clearTimeout(timer)
       }
     } catch {
@@ -233,19 +249,17 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
     let timer: number | undefined
     try {
       const shouldOpenCash = sessionStorage.getItem(OPEN_CASH_FLAG) === '1'
+      const shouldOpenExpense = sessionStorage.getItem('velora.finance.cashType') === 'CASH_OUT'
       const shouldOpenCollection = sessionStorage.getItem(OPEN_COLLECTION_FLAG) === '1'
-      if (shouldOpenCash) {
-        sessionStorage.removeItem(OPEN_CASH_FLAG)
-      }
-      if (shouldOpenCollection) {
-        sessionStorage.removeItem(OPEN_COLLECTION_FLAG)
-      }
       timer = window.setTimeout(() => {
         if (shouldOpenCash) {
+          try { sessionStorage.removeItem(OPEN_CASH_FLAG); sessionStorage.removeItem('velora.finance.cashType') } catch { /* optional */ }
           resetCashForm()
+          if (shouldOpenExpense) setCashType('CASH_OUT')
           setCashOpen(true)
         }
         if (shouldOpenCollection) {
+          try { sessionStorage.removeItem(OPEN_COLLECTION_FLAG) } catch { /* optional */ }
           resetCollectionForm()
           setCollectionOpen(true)
         }
@@ -270,6 +284,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
       setCashFormError(t('finance.categoryDescriptionRequired'))
       return
     }
+    if (!cashAccountId) { setCashFormError(t('work.accountRequired')); return }
     setSaving(true)
     setCashFormError('')
     setError('')
@@ -283,6 +298,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
         relatedCustomerId: cashCustomerId ? Number(cashCustomerId) : undefined,
         cashAccountId: cashAccountId ? Number(cashAccountId) : undefined,
       })
+      setSuccessNotice(t(cashType === 'CASH_OUT' ? 'work.savedExpense' : 'work.savedReceipt', { amount: formatCurrency(amt), account: accounts.find(a => a.id === Number(cashAccountId))?.name ?? t('work.accountUnknown') }))
       setCashOpen(false)
       resetCashForm()
       await load()
@@ -311,6 +327,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
       setCollectionFormError(t('finance.descriptionRequired'))
       return
     }
+    if (!collectionAccountId) { setCollectionFormError(t('work.accountRequired')); return }
     setSaving(true)
     setCollectionFormError('')
     setError('')
@@ -324,6 +341,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
           ? Number(collectionAccountId)
           : undefined,
       })
+      setSuccessNotice(t('work.savedReceipt', { amount: formatCurrency(amt), account: accounts.find(a => a.id === Number(collectionAccountId))?.name ?? t('work.accountUnknown') }))
       setCollectionOpen(false)
       resetCollectionForm()
       await load()
@@ -376,7 +394,6 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
     )
   }, [ledgerSearch, ledgerCustomers, locale])
 
-  const totalBalance = accounts.reduce((total, account) => total + amount(account.balance), 0)
   const totalReceivable = ledgerCustomers
     .filter((row) => row.balance > 0)
     .reduce((sum, row) => sum + row.balance, 0)
@@ -386,7 +403,8 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
 
   return (
     <>
-      <div className="module-tabs" style={{ marginBottom: 16 }}>
+      <div className="module-tabs finance-tabs" style={{ marginBottom: 16 }}>
+        {canWrite && <button type="button" className={tab === 'reserve' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('reserve')}>{t('reserve.text11')}</button>}
         <button type="button" className={tab === 'cash' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('cash')}>{t('finance.tab.cash')}</button>
         <button type="button" className={tab === 'cashflow' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('cashflow')}>{t('finance.tab.cashflow')}</button>
         <button type="button" className={tab === 'receivables' ? 'module-tab module-tab--active' : 'module-tab'} onClick={() => setTab('receivables')}>{t('finance.tab.receivables')}</button>
@@ -397,18 +415,16 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
 
       <SuccessToast message={successNotice} onDismiss={() => setSuccessNotice('')} />
 
-      {tab !== 'debts' && tab !== 'cashflow' && (
-      <ModuleSummary
-        items={[
-          { label: t('finance.cashBalance'), value: formatAmount(totalBalance), unit: 'DZD' },
-          { label: t('finance.cashMovements'), value: String(transactions.length) },
-          { label: t('finance.customerReceivable'), value: formatAmount(totalReceivable), unit: 'DZD' },
-          { label: t('finance.ledgerMovements'), value: String(ledgerMovementCount) },
-        ]}
-      />
+      {tab !== 'debts' && tab !== 'cashflow' && tab !== 'reserve' && (
+      <div className="workspace__grid">
+        {accounts.map(account => <button type="button" className="workspace__metric" key={account.id} onClick={() => { setTab('cash'); setSearch(account.name) }}><span>{account.name}</span><strong>{loading||error||accountNeedsReview(account)?t('work.unknown'):formatCurrency(Number(account.balance),account.currency)}</strong><span>{t('work.details')}</span></button>)}
+        <button type="button" className="workspace__metric" onClick={()=>{setTab('cash');setSearch('')}}><span>{t('finance.cashMovements')}</span><strong>{loading||error?t('work.unknown'):transactions.length}</strong></button>
+        <button type="button" className="workspace__metric" onClick={()=>setTab('receivables')}><span>{t('finance.customerReceivable')}</span><strong>{loading||error?t('work.unknown'):formatCurrency(totalReceivable)}</strong><span>{t('work.details')} · {ledgerMovementCount}</span></button>
+      </div>
       )}
 
       {tab === 'debts' && <FinanceDebtsTab canWrite={canWrite} />}
+      {tab === 'reserve' && canWrite && <ReservePlanTab canWrite={canWrite} />}
       {tab === 'cashflow' && (
         <CashFlowTab
           onOpenDebt={(supplierId) => {
@@ -672,6 +688,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
             <h2>{t('finance.cashAccounts')}</h2>
             <span className="panel__meta">{t('finance.accountCount', { count: accounts.length })}</span>
           </div>
+          {canWrite && <CashAccountForm onCreated={() => void load()} />}
           <div className="table-wrap">
             <table className="data-table">
               <thead>
@@ -686,7 +703,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
                   <tr key={account.id}>
                     <td>{account.name}</td>
                     <td>{account.currency}</td>
-                    <td className="amount-cell">{formatAmount(account.balance)}</td>
+                    <td className="amount-cell">{accountNeedsReview(account)?t('work.unknown'):formatAmount(account.balance)}</td>
                   </tr>
                 ))}
                 {!loading && !error && accounts.length === 0 && (
@@ -713,7 +730,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
 
       <Modal
         open={cashOpen}
-        title={t('finance.newCashMovement')}
+        title={t(cashType==='CASH_OUT'?'work.expense':'finance.newCashMovement')}
         onClose={() => {
           setCashOpen(false)
           setCashFormError('')
@@ -772,7 +789,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
               onChange={(e) => setCashDescription(e.target.value)}
             />
           </label>
-          <label>
+          <details><summary>{t('work.optional')}</summary><label>
             {t('finance.relatedCustomer')}
             <select
               dir="ltr"
@@ -786,15 +803,15 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
                 </option>
               ))}
             </select>
-          </label>
+          </label></details>
           <label>
-            {t('finance.optionalCashAccount')}
+            {t(cashType==='CASH_OUT'?'reserve.text56':'reserve.text55')}
             <select
               dir="ltr"
               value={cashAccountId}
               onChange={(e) => setCashAccountId(e.target.value)}
             >
-              <option value="">{t('finance.default')}</option>
+              <option value="">{t('finance.select')}</option>
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.code} — {a.name}
@@ -802,6 +819,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
               ))}
             </select>
           </label>
+          {cashAccountId && Number(cashAmount)>0 && <p role="status">{t('work.effect',{account:accounts.find(a=>a.id===Number(cashAccountId))?.name??t('work.accountUnknown'),amount:formatCurrency((cashType==='CASH_OUT'?-1:1)*Number(cashAmount))})}</p>}
           {cashFormError && (
             <p className="demo-notice" role="alert">
               {cashFormError}
@@ -882,13 +900,13 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            {t('finance.optionalCashAccount')}
+            {t('reserve.text55')}
             <select
               dir="ltr"
               value={collectionAccountId}
               onChange={(e) => setCollectionAccountId(e.target.value)}
             >
-              <option value="">{t('finance.default')}</option>
+              <option value="">{t('finance.select')}</option>
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.code} — {a.name}
@@ -901,6 +919,7 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
               {t('finance.createCustomerFirst')}
             </p>
           )}
+          {collectionAccountId && Number(collectionAmount)>0 && <p role="status">{t('work.effect',{account:accounts.find(a=>a.id===Number(collectionAccountId))?.name??t('work.accountUnknown'),amount:formatCurrency(Number(collectionAmount))})}</p>}
           {collectionFormError && (
             <p className="demo-notice" role="alert">
               {collectionFormError}
@@ -981,3 +1000,4 @@ export function FinanceModule({ canWrite = false }: { canWrite?: boolean }) {
     </>
   )
 }
+

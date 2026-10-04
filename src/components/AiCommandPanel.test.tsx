@@ -1,12 +1,13 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../i18n/I18nProvider'
 import { canAccessAiSuggestionDomain } from '../data/roles'
+import { apiGet } from '../data/api'
 
 const apiRequest = vi.fn()
 
-vi.mock('../data/api', () => ({
+vi.mock('../data/api', () => ({ apiGet: vi.fn().mockResolvedValue([]),
   ApiError: class ApiError extends Error {
     status: number
     constructor(message: string, status = 400) {
@@ -34,6 +35,7 @@ describe('AiCommandPanel suggestions', () => {
   beforeEach(() => {
     localStorage.clear()
     apiRequest.mockReset()
+    vi.mocked(apiGet).mockReset().mockResolvedValue([])
   })
 
   afterEach(() => {
@@ -50,6 +52,7 @@ describe('AiCommandPanel suggestions', () => {
 
     expect(screen.getByRole('button', { name: 'Kasada ne kadar para var?' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Stok durumu nedir?' })).toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Hazır soruları göster' })[0])
     expect(screen.getByRole('button', { name: 'En kritik risklerimiz neler?' })).toBeInTheDocument()
   })
 
@@ -66,6 +69,17 @@ describe('AiCommandPanel suggestions', () => {
       screen.getByRole('button', { name: 'Combien y a-t-il en caisse ?' }),
     ).toBeInTheDocument()
     expect(screen.queryByText('Kasada ne kadar para var?')).not.toBeInTheDocument()
+  })
+  it('offers examples using an actual customer and insurance plan without saving anything', async () => {
+    localStorage.setItem('velora.uiLanguage','tr')
+    vi.mocked(apiGet).mockImplementation((path:string)=>Promise.resolve(path==='/customers'?[{id:3,name:'Yacine Textile'}]:{plan:{lines:[{kind:'insurance',deferred:false}]}}) as ReturnType<typeof apiGet>)
+    render(<I18nProvider><AiCommandPanel userRole="OWNER" /></I18nProvider>)
+    const example=await screen.findByRole('button',{name:'Yacine Textile için sipariş ekle.'})
+    expect(screen.getByRole('button',{name:'Bugünkü teslimatlar ne?'})).toBeInTheDocument()
+    expect(await screen.findByRole('button',{name:'Sigorta sonrası ne kadar para kalır?'})).toBeInTheDocument()
+    fireEvent.click(example)
+    expect(screen.getByRole('textbox')).toHaveValue('Yacine Textile için sipariş ekle.')
+    expect(apiRequest).not.toHaveBeenCalled()
   })
 
   it('hides finance suggestions for production manager', () => {
@@ -153,3 +167,4 @@ describe('canAccessAiSuggestionDomain', () => {
     expect(canAccessAiSuggestionDomain('PRODUCTION_MANAGER', 'production')).toBe(true)
   })
 })
+

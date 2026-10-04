@@ -1,3 +1,5 @@
+import { workspaceTranslations } from './catalogs/workspace'
+import { reservePlanTranslations } from './catalogs/reservePlan'
 /* Translation catalogs and the useI18n hook intentionally share the provider module. */
 /* eslint-disable react-refresh/only-export-components */
 import {
@@ -58,6 +60,8 @@ const baseTranslations: Record<'tr' | 'fr' | 'en', Record<string, string>> = {
     ...financeTranslations.tr,
     ...financeDebtTranslations.tr,
     ...cashFlowTranslations.tr,
+    ...reservePlanTranslations.tr,
+    ...workspaceTranslations.tr,
     ...aiCommandTranslations.tr,
     ...loginExperienceTranslations.tr,
     ...userManagementTranslations.tr,
@@ -248,6 +252,8 @@ const baseTranslations: Record<'tr' | 'fr' | 'en', Record<string, string>> = {
     ...financeTranslations.fr,
     ...financeDebtTranslations.fr,
     ...cashFlowTranslations.fr,
+    ...reservePlanTranslations.fr,
+    ...workspaceTranslations.fr,
     ...aiCommandTranslations.fr,
     ...loginExperienceTranslations.fr,
     ...userManagementTranslations.fr,
@@ -438,6 +444,8 @@ const baseTranslations: Record<'tr' | 'fr' | 'en', Record<string, string>> = {
     ...financeTranslations.en,
     ...financeDebtTranslations.en,
     ...cashFlowTranslations.en,
+    ...reservePlanTranslations.en,
+    ...workspaceTranslations.en,
     ...aiCommandTranslations.en,
     ...loginExperienceTranslations.en,
     ...userManagementTranslations.en,
@@ -826,3 +834,4 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 export function useI18n(): I18nContextValue {
   return useContext(I18nContext)
 }
+

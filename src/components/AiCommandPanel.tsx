@@ -1,13 +1,23 @@
-import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { ApiError, apiDownload, apiPost, apiRequest } from '../data/api'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { ApiError, apiDownload, apiGet, apiPost, apiRequest } from '../data/api'
 import {
   canAccessAiSuggestionDomain,
+  canWriteOrders,
+  canWriteFinance,
   type AiSuggestionDomain,
   type AppUserRole,
 } from '../data/roles'
 import { useSpeechToText } from '../hooks/useSpeechToText'
 import { suggestErpSpelling } from '../data/aiUnderstanding'
+import { AI_COMMAND_LIMIT } from '../data/aiCalculation'
+import { aiPeriodRange, validAiDateRange, type AiDateRange, type AiPeriod } from '../data/aiPeriod'
 import { ConfirmDialog } from './ConfirmDialog'
+import { AiEntryAssistant } from './AiEntryAssistant'
+import { AiOrderContext } from './AiOrderContext'
+import { AiDocumentImport } from './AiDocumentImport'
+import { DailyEntryPanel, type DailyReview } from './DailyEntryPanel'
+import { BusinessRecords, type BusinessRecord } from './BusinessPositionPanel'
+import { aiWorkspaceLabels } from '../i18n/catalogs/aiWorkspace'
 import { Icon } from './Icons'
 import { useI18n } from '../i18n/I18nProvider'
 
@@ -18,6 +28,11 @@ interface AssistantResponse {
   writePreview?: WritePreviewState | null
   reportUrl?: string
   evidence?: EvidenceItem[]
+  dataSource?: string
+  recordsUsed?: number
+  disclaimer?: string
+  dateFrom?: string | null
+  dateTo?: string | null
 }
 
 interface EvidenceItem {
@@ -42,6 +57,7 @@ interface WritePreviewState {
 }
 
 interface ErpChatResponse {
+  data?: { documentImportId?: string; dailyEntry?: DailyReview; businessReport?: { records: BusinessRecord[]; totalRecords:number } }
   answer: string
   intent?: string
   module?: string
@@ -64,11 +80,11 @@ type SuggestionDef = {
 
 /** Örnek soru anahtarları — yalnız metin; ERP verisi yok. */
 const AI_SUGGESTIONS: SuggestionDef[] = [
-  { key: 'cash', domain: 'finance' },
-  { key: 'collections', domain: 'finance' },
-  { key: 'stock', domain: 'stock' },
   { key: 'orders', domain: 'orders' },
+  { key: 'stock', domain: 'stock' },
+  { key: 'cash', domain: 'finance' },
   { key: 'production', domain: 'production' },
+  { key: 'collections', domain: 'finance' },
   { key: 'debtors', domain: 'customers' },
   { key: 'suppliers', domain: 'suppliers' },
   { key: 'absent', domain: 'workforce' },
@@ -76,7 +92,7 @@ const AI_SUGGESTIONS: SuggestionDef[] = [
   { key: 'risks', domain: 'risks' },
 ]
 
-const INITIAL_SUGGESTION_LIMIT = 10
+const INITIAL_SUGGESTION_LIMIT = 4
 const CONTINUED_SUGGESTION_LIMIT = 3
 
 function mapErrorMessage(error: unknown, t: (key: string) => string): string {
@@ -113,7 +129,8 @@ export function AiCommandPanel({
   userRole?: AppUserRole | null
   onRefresh?: () => void
 }) {
-  const { t, formatDate, formatNumber, locale } = useI18n()
+  const { t, formatDate, formatNumber, locale, language } = useI18n()
+  const labels = aiWorkspaceLabels[language ?? 'tr']
   const [conversationId] = useState(() => crypto.randomUUID())
   const [commandInput, setCommandInput] = useState('')
   const [response, setResponse] = useState<AssistantResponse | null>(null)
@@ -123,12 +140,38 @@ export function AiCommandPanel({
   const [confirming, setConfirming] = useState(false)
   const [evidenceOpen, setEvidenceOpen] = useState(false)
   const [quickOpen, setQuickOpen] = useState(false)
+  const [documentImportId,setDocumentImportId]=useState<string>()
+  const [dailyEntry,setDailyEntry]=useState<DailyReview>()
+  const [businessReport,setBusinessReport]=useState<{records:BusinessRecord[];totalRecords:number}>()
   const [conversationStarted, setConversationStarted] = useState(false)
   const commandInputRef = useRef<HTMLTextAreaElement>(null)
   const requestBusyRef = useRef(false)
   const [history, setHistory] = useState<AssistantResponse[]>([])
-  const [failedQuery, setFailedQuery] = useState('')
+  const [failedQuery, setFailedQuery] = useState<{ message: string; range: AiDateRange } | null>(null)
+  const [period, setPeriod] = useState<AiPeriod>('auto')
+  const [customRange, setCustomRange] = useState<AiDateRange>({ dateFrom: '', dateTo: '' })
+  const range = aiPeriodRange(period, customRange)
+  const periodValid = validAiDateRange(range)
   const [downloading, setDownloading] = useState(false)
+  const [draftReady, setDraftReady] = useState(false)
+  const [exampleCustomer, setExampleCustomer] = useState<{role:AppUserRole;name:string}|null>(null)
+  const [hasInsurance, setHasInsurance] = useState<{role:AppUserRole;exists:boolean}|null>(null)
+  useEffect(() => {
+    let live = true
+    if (userRole && canWriteOrders(userRole)) apiGet<Array<{id:number;name:string}>>('/customers').then(rows => {
+      const customer = rows.find(row => row.name.toLocaleLowerCase().includes('yacine')) ?? rows[0]
+      if (live && customer) setExampleCustomer({role:userRole,name:customer.name})
+    }).catch(() => { /* Missing data does not become an example. */ })
+    if (userRole && canWriteFinance(userRole)) apiGet<{plan:{lines:Array<{kind:string;deferred:boolean}>}|null}>('/reserve-plan').then(result => {
+      if (live) setHasInsurance({role:userRole,exists:Boolean(result.plan?.lines.some(line=>line.kind==='insurance'&&!line.deferred))})
+    }).catch(() => { /* Keep the normal chat available. */ })
+    return () => { live = false }
+  }, [userRole])
+  const prepareDraft = (text: string) => {
+    setCommandInput(text)
+    setDraftReady(true)
+    commandInputRef.current?.focus()
+  }
   const voice = useSpeechToText((transcript) => {
 
     setCommandInput((current) => `${current}${current.trim() ? ' ' : ''}${transcript}`)
@@ -165,16 +208,35 @@ export function AiCommandPanel({
     writePreview: data.writePreview ?? null,
     reportUrl: data.reportUrl,
     evidence: data.evidence ?? [],
+    dataSource: data.dataSource,
+    recordsUsed: data.recordsUsed,
+    disclaimer: data.disclaimer,
+    dateFrom: data.dateFrom,
+    dateTo: data.dateTo,
   })
 
-  const sendMessage = async (raw: string) => {
+  const sendMessage = async (raw: string, requestedRange = aiPeriodRange(period, customRange)) => {
     const trimmed = raw.trim()
     if (!trimmed || requestBusyRef.current || confirming) return
+    if (!validAiDateRange(requestedRange)) {
+      setError(labels.periodError)
+      return
+    }
+    if (raw.length > AI_COMMAND_LIMIT) {
+      setError(`${t('ai.error.tooLong')} (${raw.length}/${AI_COMMAND_LIMIT})`)
+      return
+    }
+    if (/https:\/\/drive\.google\.com\//i.test(trimmed) && canWriteFinance(userRole)) {
+      setCommandInput(trimmed)
+      setQuickOpen(true)
+      return
+    }
     requestBusyRef.current = true
 
     setCommandInput(trimmed)
+    setDraftReady(false)
     setError('')
-    setFailedQuery('')
+    setFailedQuery(null)
     setConfirmOpen(false)
     setEvidenceOpen(false)
     setQuickOpen(false)
@@ -185,14 +247,17 @@ export function AiCommandPanel({
       const data = await apiRequest<ErpChatResponse>('/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: trimmed, conversationId }),
+        body: JSON.stringify({ message: trimmed, conversationId, ...requestedRange }),
       })
 
       if (response) setHistory((previous) => [...previous, response].slice(-19))
       setCommandInput('')
       setResponse(mapResponse(trimmed, data))
+      setDailyEntry(data.data?.dailyEntry)
+      setBusinessReport(data.data?.businessReport)
+      if(data.data?.documentImportId){setDocumentImportId(data.data.documentImportId);setQuickOpen(true)}
     } catch (err) {
-      setFailedQuery(trimmed)
+      setFailedQuery({ message: trimmed, range: { ...requestedRange } })
       setError(mapErrorMessage(err, t))
     } finally {
       requestBusyRef.current = false
@@ -210,7 +275,7 @@ export function AiCommandPanel({
 
   const handleConfirmWrite = async () => {
     const token = response?.writePreview?.previewToken
-    if (!token || confirming) return
+    if (!token || confirming || requestBusyRef.current) return
     setConfirming(true)
     setError('')
     try {
@@ -218,6 +283,7 @@ export function AiCommandPanel({
         previewToken: token,
       })
       setConfirmOpen(false)
+      if (data.writePreview?.applied) onRefresh?.()
       setResponse((prev) =>
         prev
           ? {
@@ -251,7 +317,7 @@ export function AiCommandPanel({
   const firstName = userName?.trim().split(/\s+/)[0]
 
   return (
-    <section className="ai-command" aria-label={t('ai.ask')}>
+    <section className="ai-command ai-workspace" aria-label={t('ai.ask')}>
       <div className="ai-command__header">
         <span className="ai-command__eyebrow">
           <Icon name="spark" /> {t('ai.ask')}
@@ -259,9 +325,25 @@ export function AiCommandPanel({
         <h2 className="ai-command__title">
           {firstName ? t('ai.greetingNamed', { name: firstName }) : t('ai.greeting')}
         </h2>
-        <p className="ai-command__subtitle">{t('ai.subtitle')}</p>
+        <p className="ai-command__subtitle">{labels.intro}</p>
       </div>
 
+      <div className="ai-workspace__tools">
+        {canAccessAiSuggestionDomain(userRole, 'orders') && <AiOrderContext disabled={loading || confirming} canReadFinance={canAccessAiSuggestionDomain(userRole, 'finance')} onDraft={prepareDraft} />}
+        <AiEntryAssistant disabled={loading || confirming} canDraft={canWriteOrders(userRole)} onDraft={prepareDraft} />
+      </div>
+      {draftReady && <p className="ai-workspace__draft-notice" role="status">{labels.draftReady}</p>}
+      <fieldset className="ai-workspace__period" disabled={loading || confirming}>
+        <label>{labels.period}<select value={period} onChange={(event) => { setPeriod(event.target.value as AiPeriod); setError('') }}>
+          {(['auto', 'today', 'month', 'previousMonth', 'custom'] as const).map((value) => <option key={value} value={value}>{labels[value]}</option>)}
+        </select></label>
+        {period === 'custom' && <>
+          <label>{labels.from}<input type="date" value={customRange.dateFrom ?? ''} max={customRange.dateTo || undefined} onChange={(event) => { setCustomRange((current) => ({ ...current, dateFrom: event.target.value })); setError('') }} /></label>
+          <label>{labels.to}<input type="date" value={customRange.dateTo ?? ''} min={customRange.dateFrom || undefined} onChange={(event) => { setCustomRange((current) => ({ ...current, dateTo: event.target.value })); setError('') }} /></label>
+        </>}
+        {period !== 'auto' && <p className="ai-entry__hint">{labels.periodHint}{periodValid && <> {range.dateFrom} → {range.dateTo}</>}</p>}
+        {!periodValid && <p className="ai-entry__error" role="status">{labels.periodError}</p>}
+      </fieldset>
       <div className="ai-command__input-wrap">
         <button
           type="button"
@@ -283,9 +365,8 @@ export function AiCommandPanel({
             setCommandInput(event.target.value)
           }}
           onKeyDown={handleCommandKeyDown}
-          placeholder={t('ai.placeholder')}
-          rows={1}
-          maxLength={1000}
+          placeholder={labels.queryHint}
+          rows={Math.min(6, Math.max(2, commandInput.split('\n').length))}
           disabled={loading || confirming}
           aria-label={t('ai.commandLabel')}
         />
@@ -314,7 +395,7 @@ export function AiCommandPanel({
             type="button"
             className="ai-command__submit"
             onClick={() => void handleCommandSubmit()}
-            disabled={!commandInput.trim() || loading || confirming}
+            disabled={!commandInput.trim() || loading || confirming || !periodValid}
             aria-label={loading ? t('ai.sending') : t('ai.send')}
             title={loading ? t('ai.sending') : t('ai.send')}
           >
@@ -322,6 +403,10 @@ export function AiCommandPanel({
           </button>
         </div>
       </div>
+      <div className="ai-workspace__composer-help"><span>{labels.keyboard}</span><span>{commandInput.length}/{AI_COMMAND_LIMIT}</span></div>
+      {dailyEntry&&<DailyEntryPanel key={dailyEntry.draft.sourceText} initial={dailyEntry} onRefresh={onRefresh}/>}
+      {businessReport&&<details><summary>Yanıtın kaynak kayıtları ({businessReport.records.length}/{businessReport.totalRecords})</summary><BusinessRecords rows={businessReport.records}/></details>}
+      {canWriteFinance(userRole) && <div hidden={!quickOpen}><AiDocumentImport documentId={documentImportId} onRefresh={onRefresh} textInput={commandInput} driveLink={commandInput.match(/https:\/\/drive\.google\.com\/\S+/i)?.[0]} /></div>}
 
       {spellingSuggestion && !loading && (
         <button type="button" className="quick-chip" disabled={confirming}
@@ -330,6 +415,8 @@ export function AiCommandPanel({
         </button>
       )}
       {showInlineSuggestions && (
+        <div className="ai-workspace__examples">
+        <p>{labels.examples}</p>
         <div className="ai-command__suggestions" aria-label={t('ai.quickQuestions')}>
           {visibleSuggestions.map((item) => (
             <button
@@ -342,13 +429,20 @@ export function AiCommandPanel({
               {item.label}
             </button>
           ))}
+          {filteredSuggestions.length > visibleSuggestions.length && <button type="button" className="quick-chip" aria-expanded={quickOpen} onClick={() => setQuickOpen(!quickOpen)}>{t('ai.showQuick')}</button>}
+        </div>
         </div>
       )}
+      {!conversationStarted && <div className="ai-command__suggestions">
+        {userRole && canAccessAiSuggestionDomain(userRole,'orders') && <button type="button" className="quick-chip" onClick={()=>prepareDraft(t('work.deliveryExample'))}>{t('work.deliveryExample')}</button>}
+        {exampleCustomer && exampleCustomer.role===userRole && canWriteOrders(userRole) && <button type="button" className="quick-chip" onClick={()=>prepareDraft(t('work.orderExample',{customer:exampleCustomer.name}))}>{t('work.orderExample',{customer:exampleCustomer.name})}</button>}
+        {hasInsurance?.role===userRole && hasInsurance?.exists && canWriteFinance(userRole) && <button type="button" className="quick-chip" onClick={()=>prepareDraft(t('work.insuranceExample'))}>{t('work.insuranceExample')}</button>}
+      </div>}
 
       {showQuickDrawer && (
         <div className="ai-command__quick" aria-label={t('ai.quickQuestions')}>
           {filteredSuggestions
-            .slice(0, conversationStarted ? CONTINUED_SUGGESTION_LIMIT : INITIAL_SUGGESTION_LIMIT)
+            .slice(conversationStarted ? 0 : INITIAL_SUGGESTION_LIMIT)
             .map((item) => (
               <button
                 key={`drawer-${item.key}`}
@@ -380,14 +474,14 @@ export function AiCommandPanel({
         </p>
       )}
 
-      {failedQuery && <button type="button" className="btn btn--ghost" disabled={loading || confirming} onClick={() => void sendMessage(failedQuery)}>{t('ai.retry')}</button>}
-      {history.map((item, index) => (
+      {failedQuery && <button type="button" className="btn btn--ghost" disabled={loading || confirming} onClick={() => void sendMessage(failedQuery.message, failedQuery.range)}>{t('ai.retry')}</button>}
+      {history.length > 0 && <details className="ai-workspace__history"><summary>{labels.history} ({history.length})</summary>{history.map((item, index) => (
         <article className="demo-response" key={index}>
           <p className="demo-response__query">{t('ai.question')}: {item.query}</p>
           <div className="demo-response__header"><span className="demo-response__badge">{t('ai.answer')}</span><span className="demo-response__time">{item.generatedAt}</span></div>
           <div className="demo-response__body">{item.content.split('\n').map((line, i) => <p dir="auto" key={i}>{line || '\u00A0'}</p>)}</div>
         </article>
-      ))}
+      ))}</details>}
       {response && (
         <article className="demo-response" aria-live="polite">
           <p className="demo-response__query">
@@ -398,11 +492,17 @@ export function AiCommandPanel({
             <span className="demo-response__badge">{t('ai.answer')}</span>
             <span className="demo-response__time">{response.generatedAt}</span>
           </div>
+          {(response.dateFrom || response.dateTo) && <p className="ai-workspace__answer-period">{labels.answerPeriod}: {response.dateFrom ?? '—'} → {response.dateTo ?? '—'}</p>}
           <div className="demo-response__body">
             {response.content.split('\n').map((line, index) => (
               <p dir="auto" key={`${index}-${line.slice(0, 12)}`}>{line || '\u00A0'}</p>
             ))}
           </div>
+          {(response.dataSource || response.recordsUsed != null) && <div className="ai-workspace__provenance">
+            {response.dataSource && <span>{labels.source}: {response.dataSource}</span>}
+            {response.recordsUsed != null && <span>{labels.records}: {response.recordsUsed}</span>}
+          </div>}
+          {response.disclaimer && <p className="ai-entry__hint">{response.disclaimer}</p>}
           {response.reportUrl && (
             <button
               type="button"
@@ -481,7 +581,7 @@ export function AiCommandPanel({
                   <button
                     type="button"
                     className="btn btn--primary"
-                    disabled={confirming}
+                    disabled={confirming || loading}
                     onClick={() => setConfirmOpen(true)}
                   >
                     {t('ai.confirmApply')}
@@ -500,6 +600,9 @@ export function AiCommandPanel({
               {onRefresh && <button type="button" className="btn btn--ghost" onClick={onRefresh}>{t('ai.refreshView')}</button>}
             </div>
           )}
+          {!preview && <div className="ai-workspace__followup" aria-label={labels.followUp}>
+            {[labels.detail, labels.next].map((question) => <button type="button" key={question} className="quick-chip" disabled={loading || confirming} onClick={() => prepareDraft(question)}>{question}</button>)}
+          </div>}
         </article>
       )}
 
@@ -518,3 +621,4 @@ export function AiCommandPanel({
     </section>
   )
 }
+

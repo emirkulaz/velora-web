@@ -1,0 +1,34 @@
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { AiDocumentImport } from './AiDocumentImport'
+const { apiGet, apiPost, apiRequest } = vi.hoisted(() => ({ apiGet: vi.fn(), apiPost: vi.fn(), apiRequest: vi.fn() }))
+vi.mock('../data/api', () => ({ apiGet, apiPost, apiRequest }))
+vi.mock('../i18n/I18nProvider', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
+const row = { key: '1:1', page: 1, line: 1, table: '1:1', rowKind: 'movement', date: '2026-09-28', description: 'Reklam', debit: '', credit: '5000', balance: '', currency: 'DZD', party: '', employee: '', product: '', quantity: '', unitPrice: '', ledgerType: '', orderNumber: '', partyId: null, employeeId: null, productId: null, orderId: null, excluded: false, reviewed: false, issues: [] }
+const ready = { id: 'doc', fileName: 'cash.pdf', version: 1, draft: { status: 'ready', kind: 'cash', currency: 'DZD', documentNumber: '', pageCount: 1, cashAccountId: 1, rows: [row] }, options: { customers: [], suppliers: [], employees: [], products: [], orders: [], accounts: [{ id: 1, name: 'Kasa', currency: 'DZD' }] }, receipts: {}, issues: {} }
+beforeEach(() => { vi.resetAllMocks(); apiRequest.mockResolvedValue(ready) })
+afterEach(cleanup)
+async function upload() { fireEvent.change(screen.getByLabelText('Dosya yükle'), { target: { files: [new File(['%PDF'], 'cash.pdf', { type: 'application/pdf' })] } }); await screen.findByText('cash.pdf') }
+it('uploads binary multipart separately, edits rows and invalidates a previous preview', async () => {
+  apiPost.mockResolvedValue({ ...ready, version: 2, writePreview: { ready: true, previewToken: 'token', lines: ['Etki: kasa bakiyesi güncellenir.', '5000 DZD'] } })
+  render(<AiDocumentImport />); await upload()
+  expect(apiRequest.mock.calls[0][0]).toBe('/ai/documents/upload')
+  expect(apiRequest.mock.calls[0][1].body).toBeInstanceOf(FormData)
+  expect(screen.getByRole('button', { name: 'Doğrulanmış kayıtları aktar' })).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: 'Kontrol et ve önizle' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Doğrulanmış kayıtları aktar' })).toBeEnabled())
+  expect(screen.getByText('Etki: kasa bakiyesi güncellenir.')).toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText('1:1 credit'), { target: { value: '6000' } })
+  expect(screen.getByRole('button', { name: 'Doğrulanmış kayıtları aktar' })).toBeDisabled()
+})
+it('uses the existing confirmation endpoint and never reports failed posting as success', async () => {
+  apiPost.mockResolvedValueOnce({ ...ready, version: 2, writePreview: { ready: true, previewToken: 'token', lines: ['Etki: kasa bakiyesi güncellenir.', '5000 DZD'] } }).mockResolvedValueOnce({ answer: 'ERP kaydı başarısız', applied: false, data: { results: [{ key: '1:1', status: 'failed' }] } })
+  const refresh = vi.fn(); render(<AiDocumentImport onRefresh={refresh} />); await upload()
+  fireEvent.click(screen.getByRole('button', { name: 'Kontrol et ve önizle' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Doğrulanmış kayıtları aktar' })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: 'Doğrulanmış kayıtları aktar' }))
+  fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'common.confirm' }))
+  await screen.findByText('ERP kaydı başarısız')
+  expect(apiPost).toHaveBeenLastCalledWith('/ai/confirm-write', { previewToken: 'token' })
+  expect(refresh).not.toHaveBeenCalled()
+})

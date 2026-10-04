@@ -1,0 +1,13 @@
+.ai-document { margin: 1rem 0; padding: 1rem; border: 1px solid var(--border, #d8dee9); border-radius: 12px; background: var(--surface, #fff); color: var(--text, #172033); }
+.ai-document__upload, .ai-document__fields { display: flex; flex-wrap: wrap; gap: .8rem; border: 0; padding: .5rem 0; align-items: end; }
+.ai-document label { display: flex; flex-direction: column; gap: .3rem; font-size: .85rem; }
+.ai-document input, .ai-document select { padding: .5rem; border: 1px solid #b8c3d2; border-radius: 6px; background: white; color: #172033; }
+.ai-document__table { overflow: auto; max-height: 65vh; margin: 1rem 0; }
+.ai-document table { border-collapse: collapse; min-width: 1300px; width: 100%; }
+.ai-document th { position: sticky; top: 0; background: #edf2f8; z-index: 1; }
+.ai-document td, .ai-document th { padding: .5rem; border-bottom: 1px solid #dde4ed; text-align: left; vertical-align: top; }
+.ai-document td input { width: 110px; }.ai-document td:nth-child(4) input { width: 220px; }
+.ai-document input[type=checkbox] { width: 18px; height: 18px; }
+.ai-document__invalid { background: #fff5eb; }.ai-document [role=alert] { color: #9a3412; }
+.ai-document__actions { display: flex; flex-wrap: wrap; gap: .6rem; }.ai-document details { min-width: 190px; }.ai-document details label { margin: .5rem 0; }
+@media(max-width: 640px) { .ai-document { padding: .6rem; }.ai-document__upload > label { width: 100%; } }

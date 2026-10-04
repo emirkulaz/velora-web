@@ -1,9 +1,9 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../i18n/I18nProvider'
 const { apiRequest } = vi.hoisted(() => ({ apiRequest: vi.fn() }))
-vi.mock('../data/api', () => ({ ApiError: class extends Error {}, apiRequest, apiPost: vi.fn(), apiDownload: vi.fn(), apiPatch: vi.fn() }))
+vi.mock('../data/api', () => ({ apiGet: vi.fn().mockResolvedValue([]), ApiError: class extends Error {}, apiRequest, apiPost: vi.fn(), apiDownload: vi.fn(), apiPatch: vi.fn() }))
 vi.mock('../hooks/useSpeechToText', () => ({ useSpeechToText: () => ({ isSupported: false, isListening: false }) }))
 import { AiCommandPanel } from './AiCommandPanel'
 afterEach(cleanup)
@@ -36,3 +36,43 @@ it('retries the failed question without losing the previous answer', async () =>
   await screen.findByText('Recovered answer')
   expect(JSON.parse(apiRequest.mock.calls[2][1].body).message).toBe('Next')
 })
+
+it('shows server provenance and prepares follow-ups without sending automatically', async () => {
+  localStorage.setItem('velora.uiLanguage', 'tr')
+  apiRequest.mockResolvedValue({ ...answer('Siparişler listelendi.'), dataSource: 'Sipariş kayıtları', recordsUsed: 3, disclaimer: 'Teslim tarihi eksik kayıtlar var.' })
+  render(<I18nProvider><AiCommandPanel userRole="OWNER" /></I18nProvider>)
+  const user = userEvent.setup()
+  await user.type(screen.getByRole('textbox'), 'Siparişlerim{Enter}')
+  await screen.findByText('Siparişler listelendi.')
+  expect(screen.getByText('Kaynak: Sipariş kayıtları')).toBeInTheDocument()
+  expect(screen.getByText('Kullanılan kayıt: 3')).toBeInTheDocument()
+  expect(screen.getByText('Teslim tarihi eksik kayıtlar var.')).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Daha ayrıntılı açıkla.' }))
+  expect(screen.getByRole('textbox')).toHaveValue('Daha ayrıntılı açıkla.')
+  expect(apiRequest).toHaveBeenCalledTimes(1)
+  await user.click(screen.getByRole('button', { name: 'Gönder' }))
+  const payloads = apiRequest.mock.calls.map((call) => JSON.parse(call[1].body))
+  expect(payloads[0].conversationId).toBe(payloads[1].conversationId)
+})
+
+it('validates custom dates, preserves them on retry and shows the server period', async () => {
+  localStorage.setItem('velora.uiLanguage', 'tr')
+  apiRequest.mockRejectedValueOnce(new TypeError('offline')).mockResolvedValueOnce({ ...answer('Dönem yanıtı'), dateFrom: '2026-09-01', dateTo: '2026-09-30' })
+  render(<I18nProvider><AiCommandPanel /></I18nProvider>)
+  const user = userEvent.setup()
+  await user.selectOptions(screen.getByLabelText('Sorgu dönemi'), 'custom')
+  await user.type(screen.getByRole('textbox'), 'Siparişleri özetle')
+  expect(screen.getByRole('button', { name: 'Gönder' })).toBeDisabled()
+  fireEvent.change(screen.getByLabelText('Başlangıç tarihi'), { target: { value: '2026-09-01' } })
+  fireEvent.change(screen.getByLabelText('Bitiş tarihi'), { target: { value: '2026-09-30' } })
+  await user.click(screen.getByRole('button', { name: 'Gönder' }))
+  await screen.findByRole('alert')
+  await user.selectOptions(screen.getByLabelText('Sorgu dönemi'), 'auto')
+  await user.click(screen.getByRole('button', { name: 'Tekrar dene' }))
+  await screen.findByText('Dönem yanıtı')
+  const payloads = apiRequest.mock.calls.map((call) => JSON.parse(call[1].body))
+  expect(payloads[0]).toMatchObject({ dateFrom: '2026-09-01', dateTo: '2026-09-30' })
+  expect(payloads[1]).toEqual(payloads[0])
+  expect(screen.getByText('Yanıt dönemi: 2026-09-01 → 2026-09-30')).toBeInTheDocument()
+})
+

@@ -1,0 +1,24 @@
+.reserve-plan { display: grid; gap: 16px; }
+.finance-tabs { max-width: 100%; overflow-x: auto; background: var(--color-bg); }
+.finance-tabs .module-tab { flex-shrink: 0; white-space: nowrap; color: var(--color-text-muted); }
+.finance-tabs .module-tab--active { background: var(--color-surface); color: var(--color-primary); }
+:root[data-theme='dark'] .reserve-plan input { color-scheme: dark; }
+.reserve-plan h2, .reserve-plan h3, .reserve-plan p { margin: 0; }
+.reserve-plan__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.reserve-plan label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.reserve-plan input, .reserve-plan select { padding: 9px; border: 1px solid var(--color-border, #cbd5e1); border-radius: 6px; background: var(--color-surface, #fff); color: inherit; min-width: 0; }
+.reserve-plan input[type=checkbox] { align-self: flex-start; }
+.reserve-plan button { padding: 9px 14px; border-radius: 7px; border: 1px solid var(--color-border, #cbd5e1); cursor: pointer; background: var(--color-surface, #fff); color: var(--color-text, #354052); }
+.reserve-plan fieldset { border: 1px solid var(--color-border, #cbd5e1); border-radius: 10px; padding: 16px; display: grid; gap: 16px; min-width: 0; }
+.reserve-plan__actions, .reserve-plan__balances { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.reserve-plan__balances article { display: grid; gap: 8px; border: 1px solid var(--color-border, #cbd5e1); padding: 12px; border-radius: 8px; }
+.reserve-plan__lines { display: grid; gap: 14px; }
+.reserve-plan__line { display: grid; gap: 10px; border: 1px solid var(--color-border, #cbd5e1); border-radius: 8px; padding: 14px; }
+.reserve-plan__scenarios { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; }
+.reserve-plan__scenarios article { border: 1px solid var(--color-border, #cbd5e1); border-radius: 10px; padding: 16px; display: grid; gap: 12px; }
+.reserve-plan dl { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin: 0; }
+.reserve-plan dd { margin: 0; font-weight: 600; }
+.reserve-plan__explanation { white-space: pre-wrap; font: inherit; line-height: 1.7; border: 1px solid var(--color-border, #cbd5e1); padding: 16px; }
+.reserve-plan [role=alert] { color: var(--color-warning, #b45309); }
+.reserve-plan__insurance { display: grid; gap: 8px; padding: 16px; border: 1px solid #d97706; border-radius: 9px; background: #d9770618; }
+

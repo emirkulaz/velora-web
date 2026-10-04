@@ -2,12 +2,27 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { AiCommandPanel } from './AiCommandPanel'
 const { apiRequest, apiPost } = vi.hoisted(() => ({ apiRequest: vi.fn(), apiPost: vi.fn() }))
-vi.mock('../data/api', () => ({ ApiError: class extends Error {}, apiRequest, apiPost, apiDownload: vi.fn() }))
+vi.mock('../data/api', () => ({ apiGet: vi.fn().mockResolvedValue([]), ApiError: class extends Error {}, apiRequest, apiPost, apiDownload: vi.fn() }))
 vi.mock('../i18n/I18nProvider', () => ({ useI18n: () => ({ t: (key: string) => key, formatDate: (value: string) => value }) }))
 vi.mock('../hooks/useSpeechToText', () => ({ useSpeechToText: () => ({ isSupported: false, isListening: false }) }))
 const reply = { answer: 'Result', generatedAt: '2026-09-14', dataFreshness: '2026-09-14' }
 beforeEach(() => { apiRequest.mockReset(); apiPost.mockReset() })
 afterEach(cleanup)
+it('preserves overlong input and accepts commands up to 20000 characters', async () => {
+  apiRequest.mockResolvedValue(reply)
+  render(<AiCommandPanel />)
+  const input = screen.getByRole('textbox')
+  expect(input).not.toHaveAttribute('maxlength')
+  fireEvent.change(input, { target: { value: 'x'.repeat(20001) } })
+  fireEvent.keyDown(input, { key: 'Enter', shiftKey: false })
+  expect(apiRequest).not.toHaveBeenCalled()
+  expect(input).toHaveValue('x'.repeat(20001))
+  expect(screen.getByText('ai.error.tooLong (20001/20000)')).toBeInTheDocument()
+  fireEvent.change(input, { target: { value: 'x'.repeat(20000) } })
+  fireEvent.keyDown(input, { key: 'Enter', shiftKey: false })
+  await screen.findByText('Result')
+  expect(JSON.parse(apiRequest.mock.calls[0][1].body).message).toHaveLength(20000)
+})
 async function send() {
   fireEvent.change(screen.getByRole('textbox'), { target: { value: 'stok girişi yap' } })
   fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', shiftKey: false })
@@ -38,9 +53,10 @@ it.each([true, false])('offers refresh only when confirmation reports applied=%s
   fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'ai.confirm' }))
   await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/ai/confirm-write', { previewToken: 'token' }))
   await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
-  expect(onRefresh).not.toHaveBeenCalled()
+  expect(onRefresh).toHaveBeenCalledTimes(applied ? 1 : 0)
   if (applied) {
     fireEvent.click(screen.getByRole('button', { name: 'ai.refreshView' }))
-    expect(onRefresh).toHaveBeenCalledOnce()
+    expect(onRefresh).toHaveBeenCalledTimes(2)
   } else expect(screen.queryByText('ai.refreshView')).not.toBeInTheDocument()
 })
+

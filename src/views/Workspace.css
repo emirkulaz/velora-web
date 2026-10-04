@@ -1,0 +1,104 @@
+.workspace {
+  display: grid;
+  gap: 20px;
+}
+.workspace h1,
+.workspace h2,
+.workspace h3,
+.workspace p {
+  margin: 0;
+}
+.workspace__header,
+.workspace__actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+.workspace__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
+}
+.workspace__section {
+  padding: 20px;
+  display: grid;
+  gap: 14px;
+}
+.workspace__alerts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 12px;
+}
+.workspace__alert p {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.workspace__alert {
+  display: grid;
+  gap: 8px;
+  border-left: 4px solid var(--color-warning);
+  padding: 12px;
+  background: var(--color-warning-bg);
+  border-radius: 8px;
+}
+.workspace__alert--critical {
+  border-color: var(--color-danger);
+  background: var(--color-danger-bg);
+}
+.workspace__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border-light);
+}
+.workspace__metric {
+  text-align: left;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  border-radius: 10px;
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+  cursor: pointer;
+}
+.workspace__metric strong {
+  font-size: 24px;
+}
+.workspace details summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.workspace .btn:focus-visible,
+.workspace__metric:focus-visible,
+summary:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 3px;
+}
+.workspace__tag {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+.workspace__scenario {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+@media (max-width: 600px) {
+  .workspace__actions .btn {
+    flex: 1;
+    min-height: 44px;
+  }
+  .workspace__section {
+    padding: 16px;
+  }
+  .workspace__row strong {
+    overflow-wrap: anywhere;
+  }
+}

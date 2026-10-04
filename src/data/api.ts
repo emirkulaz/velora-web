@@ -24,6 +24,8 @@ function fallbackMessage(status: number): string {
   if (status === 403) return 'Bu işlem için yetkiniz yok.'
   if (status === 429) return 'Çok fazla istek gönderildi. Lütfen kısa süre sonra tekrar deneyin.'
   if (status >= 500) return 'Sunucu işlemi tamamlayamadı. Lütfen daha sonra tekrar deneyin.'
+  if (status === 404) return 'Kayıt bulunamadı. Listeyi yenileyip tekrar deneyin.'
+  if (status === 409) return 'Bu kayıt değişmiş veya zaten mevcut. Bilgileri yenileyip kontrol edin.'
   return 'İstek tamamlanamadı.'
 }
 
@@ -39,8 +41,15 @@ async function parseError(response: Response): Promise<ApiError> {
   } catch {
     // Keep the status-specific safe fallback.
   }
-  if (/api[_-]?key|sk-[a-z0-9]|bearer\s+|postgres(?:ql)?:\/\//i.test(message)) {
+  if (/api[_-]?key|sk-[a-z0-9]|bearer\s+|postgres(?:ql)?:\/\/|prisma|SQLSTATE|\bconstraint\b|\bat \S+\.(?:ts|js):\d+/i.test(message) || response.status >= 500) {
     message = fallbackMessage(response.status)
+  }
+  if (/must be|should not|property \S+ should|is not a valid enum/i.test(message)) {
+    message = /amount|price|quantity/i.test(message)
+      ? 'Tutar ve miktar alanlarını kontrol edin. Geçerli bir sayı girin.'
+      : /date|transactionAt/i.test(message)
+        ? 'Tarihi kontrol edin ve geçerli bir tarih seçin.'
+        : 'Gerekli bilgileri kontrol edip eksik alanları doldurun.'
   }
   return new ApiError(message, response.status)
 }
@@ -60,7 +69,7 @@ async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Respon
   const timeoutId = window.setTimeout(() => {
     timedOut = true
     controller.abort()
-  }, REQUEST_TIMEOUT_MS)
+  }, /\/ai\/(?:documents|confirm-write)(?:\/|$)/.test(url) ? 90_000 : REQUEST_TIMEOUT_MS)
 
   if (init?.signal?.aborted) {
     forwardAbort()

@@ -11,7 +11,8 @@ type ProductOption = { id: number; code: string; name: string; salePrice: number
 
 type InvoiceItem = {
   id?: number
-  productId: number
+  productId: number | null
+  modelName?: string | null; color?: string | null; widthCm?: number | null; sourceDescription?: string | null; quantity?: number; unit?: string; lineDescription?: string
   productCode?: string
   productNameSnapshot?: string
   quantityMeter: number
@@ -35,12 +36,13 @@ type ProductInvoice = {
 }
 
 type FormItem = {
+  modelName:string; color:string; widthCm:string; sourceDescription:string; unit:string;
   productId: string
   quantityMeter: string
   unitPrice: string
 }
 
-const emptyItem = (): FormItem => ({ productId: '', quantityMeter: '1', unitPrice: '0' })
+const emptyItem = (): FormItem => ({ productId: '', quantityMeter: '1', unitPrice: '0', modelName:'',color:'',widthCm:'',sourceDescription:'',unit:'METER' })
 
 export function ProductInvoicesTab({ canWrite = false }: { canWrite?: boolean }) {
   const { t, formatCurrency, formatDate, formatNumber } = useI18n()
@@ -109,8 +111,9 @@ export function ProductInvoicesTab({ canWrite = false }: { canWrite?: boolean })
     setItems(
       invoice.items.length > 0
         ? invoice.items.map((item) => ({
-            productId: String(item.productId),
-            quantityMeter: String(item.quantityMeter),
+            productId: item.productId ? String(item.productId) : '',
+            modelName:item.modelName||item.productNameSnapshot||'',color:item.color??'',widthCm:item.widthCm==null?'':String(item.widthCm),sourceDescription:item.sourceDescription??'',unit:item.unit??'METER',
+            quantityMeter: String(item.quantity??item.quantityMeter),
             unitPrice: String(item.unitPrice),
           }))
         : [emptyItem()],
@@ -122,23 +125,9 @@ export function ProductInvoicesTab({ canWrite = false }: { canWrite?: boolean })
   const handleSave = async (event: FormEvent) => {
     event.preventDefault()
     if (!canWrite || saving) return
-    const validItems = items
-      .map((item) => ({
-        productId: Number(item.productId),
-        quantityMeter: Number(item.quantityMeter),
-        unitPrice: Number(item.unitPrice),
-      }))
-      .filter(
-        (item) =>
-          item.productId > 0 &&
-          Number.isFinite(item.quantityMeter) &&
-          item.quantityMeter > 0 &&
-          Number.isFinite(item.unitPrice) &&
-          item.unitPrice > 0,
-      )
-    if (!customerId || validItems.length === 0) {
-      setFormError(t('invoices.validation'))
-      return
+    const validItems = items.map(item=>({productId:item.productId?Number(item.productId):null,modelName:item.modelName.trim()||undefined,color:item.color.trim()||undefined,widthCm:item.widthCm?Number(item.widthCm):undefined,sourceDescription:item.sourceDescription||undefined,quantity:Number(item.quantityMeter),unit:item.unit,unitPrice:Number(item.unitPrice)}))
+    if(!customerId||!validItems.length||validItems.some(item=>(!item.productId&&!item.modelName&&!item.sourceDescription)||!Number.isFinite(item.quantity)||item.quantity<=0||!Number.isFinite(item.unitPrice)||item.unitPrice<=0||!item.unit||(item.widthCm!==undefined&&(!Number.isFinite(item.widthCm)||item.widthCm<0)))){
+      setFormError('Eksik veya geçersiz satırı tamamlayın. Hiçbir satır atılmadı.');return
     }
     setSaving(true)
     setFormError('')
@@ -231,7 +220,7 @@ export function ProductInvoicesTab({ canWrite = false }: { canWrite?: boolean })
             <tbody>
               {invoices.map((invoice) => (
                 <tr key={invoice.id}>
-                  <td className="mono">{invoice.invoiceNumber}</td>
+                  <td><span className="mono">{invoice.invoiceNumber}</span>{invoice.items.map((item,i)=><p key={item.id??i}>{item.lineDescription||item.productNameSnapshot}{item.sourceDescription&&<small style={{display:'block'}}>{item.sourceDescription}</small>}</p>)}</td>
                   <td>{invoice.customerName}</td>
                   <td className="date-cell">{formatDate(`${invoice.invoiceDate}T12:00:00`)}</td>
                   <td>{t(`invoices.status.${invoice.status}`)}</td>
@@ -329,7 +318,6 @@ export function ProductInvoicesTab({ canWrite = false }: { canWrite?: boolean })
           {items.map((item, index) => (
             <div key={index} className="form-actions" style={{ gap: 8, flexWrap: 'wrap' }}>
               <select
-                required
                 value={item.productId}
                 onChange={(e) => {
                   const next = [...items]
@@ -337,19 +325,22 @@ export function ProductInvoicesTab({ canWrite = false }: { canWrite?: boolean })
                   next[index] = {
                     ...item,
                     productId: e.target.value,
+                    modelName: item.modelName || product?.name || '',
                     unitPrice:
                       product?.salePrice != null ? String(product.salePrice) : item.unitPrice,
                   }
                   setItems(next)
                 }}
               >
-                <option value="">{t('invoices.product')}</option>
+                <option value="">Ürün bağlantısı yok — serbest satır</option>
                 {products.map((product) => (
                   <option key={product.id} value={product.id}>
                     {product.code} · {product.name}
                   </option>
                 ))}
               </select>
+              {(['modelName','color','widthCm','sourceDescription'] as const).map(field=><label key={field}>{({modelName:'Model / serbest ürün adı',color:'Renk',widthCm:'Ölçü (cm)',sourceDescription:'Kaynak açıklama'})[field]}<input value={item[field]} onChange={e=>setItems(rows=>rows.map((r,i)=>i===index?{...r,[field]:e.target.value}:r))}/></label>)}
+              <label>Satış birimi<select value={item.unit} onChange={e=>setItems(rows=>rows.map((r,i)=>i===index?{...r,unit:e.target.value}:r))}><option value="METER">Metre</option><option value="PIECE">Adet</option><option value="KILOGRAM">Kilogram</option></select></label>
               <input
                 type="number"
                 min="0.001"
@@ -363,7 +354,7 @@ export function ProductInvoicesTab({ canWrite = false }: { canWrite?: boolean })
                   setItems(next)
                 }}
                 style={{ width: 110 }}
-                title={t('invoices.quantityMeter')}
+                title="Satış miktarı"
               />
               <input
                 type="number"

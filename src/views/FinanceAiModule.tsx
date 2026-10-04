@@ -1,5 +1,6 @@
 import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { ApiError, apiRequest } from '../data/api'
+import { AI_COMMAND_LIMIT } from '../data/aiCalculation'
 import { algiersYmd } from '../data/dates'
 import { useSpeechToText } from '../hooks/useSpeechToText'
 import { Icon } from '../components/Icons'
@@ -56,6 +57,10 @@ export function FinanceAiModule() {
   const send = async (rawMessage: string) => {
     const message = rawMessage.trim()
     if (!message || loading) return
+    if (rawMessage.length > AI_COMMAND_LIMIT) {
+      setError(`${t('ai.error.tooLong')} (${rawMessage.length}/${AI_COMMAND_LIMIT})`)
+      return
+    }
 
     const payloadKey = `${message}|${dateFrom}|${dateTo}`
     if (payloadKey === lastPayloadRef.current) {
@@ -239,7 +244,6 @@ export function FinanceAiModule() {
           }}
           onKeyDown={onKeyDown}
           rows={2}
-          maxLength={1000}
           placeholder={t('financeAi.placeholder')}
           disabled={loading}
         />

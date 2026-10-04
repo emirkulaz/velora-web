@@ -34,14 +34,8 @@ import './App.css'
 const AiCommandPanel = lazy(() =>
   import('./components/AiCommandPanel').then((module) => ({ default: module.AiCommandPanel })),
 )
-const ExchangeRateTicker = lazy(() =>
-  import('./components/ExchangeRateTicker').then((module) => ({ default: module.ExchangeRateTicker })),
-)
 const MfaSetupPanel = lazy(() =>
   import('./components/MfaSetupPanel').then((module) => ({ default: module.MfaSetupPanel })),
-)
-const DailyWorkActions = lazy(() =>
-  import('./views/DailyWorkActions').then((module) => ({ default: module.DailyWorkActions })),
 )
 
 interface CurrentUser {
@@ -77,6 +71,8 @@ function initials(name: string) {
 function App() {
   const { language, t, setLanguage } = useI18n()
   const [moduleRevision, setModuleRevision] = useState(0)
+  const [erpChanged, setErpChanged] = useState(false)
+  const moduleEditedRef = useRef(false)
   const [activeMenu, setActiveMenu] = useState<MenuId>('overview')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
@@ -108,6 +104,31 @@ function App() {
   )
 
   const closeSidebar = () => setSidebarOpen(false)
+
+  useEffect(() => { moduleEditedRef.current = false; setErpChanged(false) }, [activeMenu, moduleRevision])
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser) return
+    let cancelled = false, pending = false
+    let revision: string | undefined
+    const checkRevision = async () => {
+      if (pending || document.hidden) return
+      pending = true
+      try {
+        const next = await apiGet<{ revision: string }>('/erp/revision')
+        if (cancelled || !next?.revision) return
+        if (revision !== undefined && revision !== next.revision) {
+          if (moduleEditedRef.current || document.querySelector('[role="dialog"]')) setErpChanged(true)
+          else setModuleRevision(value => value + 1)
+        }
+        revision = next.revision
+      } catch { /* Normal request/session handling remains in the API layer. Retry on focus or next interval. */ }
+      finally { pending = false }
+    }
+    void checkRevision()
+    const timer = setInterval(() => void checkRevision(), 15000)
+    window.addEventListener('focus', checkRevision)
+    return () => { cancelled = true; clearInterval(timer); window.removeEventListener('focus', checkRevision) }
+  }, [isAuthenticated, currentUser?.email, companyPresentation?.companyId])
 
   useEffect(() => {
     document.documentElement.dataset.theme = darkMode ? 'dark' : 'light'
@@ -463,28 +484,15 @@ function App() {
         </header>
 
         <main className="content">
-          {activeMenu === 'overview' && (
-            <SectionErrorBoundary resetKey="exchange-rates">
-              <Suspense fallback={null}>
-                <ExchangeRateTicker />
-              </Suspense>
-            </SectionErrorBoundary>
-          )}
           {activeMenu !== 'overview' && (
           <SectionErrorBoundary resetKey="ai-command-panel">
             <Suspense fallback={<p className="demo-notice">{t('common.loading')}</p>}>
-              <AiCommandPanel key={currentUser?.email} userName={currentUser?.name} userRole={currentUser?.role} onRefresh={() => setModuleRevision((value) => value + 1)} />
+              <AiCommandPanel key={`${companyPresentation?.companyId}:${currentUser?.email}:${currentUser?.role}`} userName={currentUser?.name} userRole={currentUser?.role} onRefresh={() => setModuleRevision((value) => value + 1)} />
             </Suspense>
           </SectionErrorBoundary>
           )}
-          {activeMenu === 'dailyWork' && (
-            <SectionErrorBoundary resetKey="daily-work-actions">
-              <Suspense fallback={null}>
-                <DailyWorkActions onNavigate={setActiveMenu} />
-              </Suspense>
-            </SectionErrorBoundary>
-          )}
-          <div className="module-area">
+          {erpChanged && <p role="status">ERP kayıtları değişti. Açık düzenlemeniz korunuyor. <button type="button" onClick={() => setModuleRevision(value => value + 1)}>Güncel kayıtları yükle</button></p>}
+          <div className="module-area" onInputCapture={() => { moduleEditedRef.current = true }}>
             <SectionErrorBoundary key={`${activeMenu}:${moduleRevision}`} resetKey={activeMenu}>
               <Suspense fallback={<p className="demo-notice">{t('common.loading')}</p>}>
               {renderModule(
@@ -497,16 +505,14 @@ function App() {
               </Suspense>
             </SectionErrorBoundary>
           </div>
-          {activeMenu === 'overview' && (
-          <SectionErrorBoundary resetKey="ai-command-panel">
+          {activeMenu === 'overview' && <SectionErrorBoundary resetKey="home-ai-command-panel">
             <Suspense fallback={<p className="demo-notice">{t('common.loading')}</p>}>
-              <AiCommandPanel key={currentUser?.email} userName={currentUser?.name} userRole={currentUser?.role} onRefresh={() => setModuleRevision((value) => value + 1)} />
+              <AiCommandPanel key={`${companyPresentation?.companyId}:${currentUser?.email}:${currentUser?.role}`} userName={currentUser?.name} userRole={currentUser?.role} onRefresh={() => setModuleRevision(value => value + 1)} />
             </Suspense>
-          </SectionErrorBoundary>
-          )}
-          <footer className="content-credit" aria-label="Credits">
+          </SectionErrorBoundary>}
+          {activeMenu !== 'overview' && <footer className="content-credit" aria-label="Credits">
             Created by Emir Kulaz
-          </footer>
+          </footer>}
         </main>
       </div>
     </div>

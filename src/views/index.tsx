@@ -20,7 +20,6 @@ import type { MenuId } from '../data/types'
 const CostCalculationModule = lazy(() => import('./CostCalculationModule').then((m) => ({ default: m.CostCalculationModule })))
 const CustomerRequestsModule = lazy(() => import('./CustomerRequestsModule').then((m) => ({ default: m.CustomerRequestsModule })))
 const CustomersModule = lazy(() => import('./CustomersModule').then((m) => ({ default: m.CustomersModule })))
-const DailyWorkModule = lazy(() => import('./DailyWorkModule').then((m) => ({ default: m.DailyWorkModule })))
 const FinanceAiModule = lazy(() => import('./FinanceAiModule').then((m) => ({ default: m.FinanceAiModule })))
 const FinanceModule = lazy(() => import('./FinanceModule').then((m) => ({ default: m.FinanceModule })))
 const InventoryModule = lazy(() => import('./InventoryModule').then((m) => ({ default: m.InventoryModule })))
@@ -40,7 +39,7 @@ export function renderModule(
 ): ReactElement {
   switch (id) {
     case 'dailyWork':
-      return <DailyWorkModule onNavigate={onNavigate} showActions={false} />
+      return <OverviewModule role={role} onNavigate={onNavigate} />
     case 'customers':
       return (
         <CustomersModule

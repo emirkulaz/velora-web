@@ -19,6 +19,7 @@ type SalesOrder = {
   customerId: number
   customerName: string | null
   productId: number | null
+  modelName?: string | null; color?: string | null; sourceDescription?: string | null; lineDescription?: string
   productName: string | null
   orderNumber: string
   orderDate: string
@@ -107,6 +108,9 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
   const [advanceAmount, setAdvanceAmount] = useState('0')
   const [widthCm, setWidthCm] = useState('')
   const [colorCount, setColorCount] = useState('')
+  const [modelName,setModelName]=useState('')
+  const [color,setColor]=useState('')
+  const [sourceDescription,setSourceDescription]=useState('')
   const [notes, setNotes] = useState('')
   const [status, setStatus] = useState<'DRAFT' | 'CONFIRMED'>('DRAFT')
 
@@ -119,6 +123,12 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
   const [extraAdvanceAmount, setExtraAdvanceAmount] = useState('')
   const [extraAdvanceAt, setExtraAdvanceAt] = useState(nowDatetimeLocal())
   const [extraAdvanceDesc, setExtraAdvanceDesc] = useState('')
+  const [paymentAccounts, setPaymentAccounts] = useState<Array<{ id: number; name: string; currency: string; isActive: boolean }>>([])
+  const [collectionAccountId, setCollectionAccountId] = useState('')
+  const [advanceAccountId, setAdvanceAccountId] = useState('')
+  const [initialAccountId, setInitialAccountId] = useState('')
+  const [paymentMethod, setPaymentMethod] = useState('CASH')
+  const paymentAccountField = (value: string, onChange: (id: string) => void) => <><label>{t('reserve.receiptAccount')}<select required value={value} onChange={e => onChange(e.target.value)}><option value="">{t('reserve.text10')}</option>{paymentAccounts.filter(a=>a.isActive && a.currency === (selected?.currency ?? 'DZD')).map(a=><option key={a.id} value={a.id}>{a.name} · {a.currency}</option>)}</select></label><label>{t('reserve.paymentMethod')}<select value={paymentMethod} onChange={e=>setPaymentMethod(e.target.value)}><option value="CASH">{t('reserve.cashMethod')}</option><option value="BANK">{t('reserve.bankMethod')}</option></select></label></>
 
   const liveGross = useMemo(() => {
     const q = Number(quantity) || 0
@@ -137,14 +147,16 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
     setLoading(true)
     setError('')
     try {
-      const [orderRows, customerRows, productRows] = await Promise.all([
+      const [orderRows, customerRows, productRows, accountRows] = await Promise.all([
         apiGet<SalesOrder[]>('/orders'),
         apiGet<Array<{ id: number; name: string }>>('/customers'),
         apiGet<ProductOption[]>('/products'),
+        apiGet<typeof paymentAccounts>('/cash-accounts').catch(() => []),
       ])
       setOrders(orderRows)
       setCustomers(customerRows.map((c) => ({ id: c.id, name: c.name })))
       setProducts(productRows)
+      setPaymentAccounts(Array.isArray(accountRows) ? accountRows : [])
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -160,6 +172,16 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
     const timeoutId = window.setTimeout(() => void load(), 0)
     return () => window.clearTimeout(timeoutId)
   }, [load])
+
+  useEffect(() => {
+    try {
+      const value = sessionStorage.getItem('velora.orders.selectedId')
+      if (value && /^\d+$/.test(value)) {
+        const timer = window.setTimeout(() => { sessionStorage.removeItem('velora.orders.selectedId'); setSelectedId(Number(value)) }, 0)
+        return () => window.clearTimeout(timer)
+      }
+    } catch { /* Storage is optional. */ }
+  }, [])
 
   useEffect(() => {
     if (selectedId == null) return
@@ -210,8 +232,10 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
     setUnit('METER')
     setUnitPrice('0')
     setAdvanceAmount('0')
+    setInitialAccountId('')
     setWidthCm('')
     setColorCount('')
+    setModelName('');setColor('');setSourceDescription('')
     setNotes('')
     setStatus('DRAFT')
     setFormError('')
@@ -222,7 +246,6 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
     let shouldOpen = false
     try {
       if (sessionStorage.getItem(OPEN_ORDER_CREATE_FLAG) === '1') {
-        sessionStorage.removeItem(OPEN_ORDER_CREATE_FLAG)
         shouldOpen = true
       }
     } catch {
@@ -230,6 +253,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
     }
     if (!shouldOpen) return
     const timeoutId = window.setTimeout(() => {
+      try { sessionStorage.removeItem(OPEN_ORDER_CREATE_FLAG) } catch { /* optional */ }
       resetForm()
       setFormOpen(true)
     }, 0)
@@ -247,6 +271,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
     setAdvanceAmount(String(order.advanceAmount))
     setWidthCm(order.widthCm != null ? String(order.widthCm) : '')
     setColorCount(order.colorCount != null ? String(order.colorCount) : '')
+    setModelName(order.modelName??'');setColor(order.color??'');setSourceDescription(order.sourceDescription??'')
     setNotes(order.notes ?? '')
     setStatus(order.status === 'CONFIRMED' ? 'CONFIRMED' : 'DRAFT')
     setFormError('')
@@ -268,6 +293,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
   const handleSave = async (event: FormEvent) => {
     event.preventDefault()
     if (!canWrite || saving) return
+    if (!editing && Number(advanceAmount) > 0 && !initialAccountId) { setFormError(t('reserve.chooseReceiptAccount')); return }
     if (liveRemaining < 0) {
       setFormError(t('orders.negativeRemaining'))
       return
@@ -283,6 +309,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
       if (editing) {
         const updated = await apiPatch<SalesOrder>(`/orders/${editing.id}`, {
           customerId: Number(customerId),
+          modelName:modelName.trim(),color:color.trim(),sourceDescription:sourceDescription.trim(),
           productId: productId ? Number(productId) : null,
           orderDate,
           expectedDeliveryDate: expectedDeliveryDate || null,
@@ -306,6 +333,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           customerId: Number(customerId),
+          modelName:modelName.trim(),color:color.trim(),sourceDescription:sourceDescription.trim(),
           productId: productId ? Number(productId) : undefined,
           orderDate,
           expectedDeliveryDate: expectedDeliveryDate || undefined,
@@ -313,6 +341,8 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
           unit,
           unitPrice: Number(unitPrice),
           advanceAmount: Number(advanceAmount) || 0,
+          cashAccountId: initialAccountId ? Number(initialAccountId) : undefined,
+          paymentMethod,
           widthCm: widthCm ? Number(widthCm) : undefined,
           colorCount: colorCount ? Number(colorCount) : undefined,
           notes: notes.trim() || undefined,
@@ -428,6 +458,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
   const handleCollection = async (event: FormEvent) => {
     event.preventDefault()
     if (!selected || !canOperate || saving) return
+    if (!collectionAccountId) { setError(t('reserve.chooseReceiptAccount')); return }
     setSaving(true)
     setError('')
     try {
@@ -436,6 +467,8 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
         transactionAt: toIsoDateTime(collectionAt),
         description: collectionDesc.trim() || undefined,
         postToCash: true,
+        cashAccountId: Number(collectionAccountId),
+        paymentMethod,
       })
       setCollectionAmount('')
       setCollectionDesc('')
@@ -452,6 +485,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
   const handleExtraAdvance = async (event: FormEvent) => {
     event.preventDefault()
     if (!selected || !canOperate || saving) return
+    if (!advanceAccountId) { setError(t('reserve.chooseReceiptAccount')); return }
     setSaving(true)
     setError('')
     try {
@@ -460,6 +494,8 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
         transactionAt: toIsoDateTime(extraAdvanceAt),
         description: extraAdvanceDesc.trim() || undefined,
         postToCash: true,
+        cashAccountId: Number(advanceAccountId),
+        paymentMethod,
       })
       setExtraAdvanceAmount('')
       setExtraAdvanceDesc('')
@@ -583,6 +619,9 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                   <tr
                     key={order.id}
                     style={{ cursor: 'pointer' }}
+                    tabIndex={0}
+                    aria-label={order.orderNumber}
+                    onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelected(null); setSelectedId(order.id) } }}
                     onClick={() => {
                       setSelected(null)
                       setSelectedId(order.id)
@@ -691,7 +730,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
             <p>
               <strong>{t('orders.customer')}:</strong> {selected.customerName ?? selected.customerId}
             </p>
-            <p><strong>{t('orders.product')}:</strong> {selected.productName ?? t('orders.noLinkedProduct')}</p>
+            <p><strong>{t('orders.product')}:</strong> {selected.lineDescription || selected.productName || t('orders.noLinkedProduct')}</p>
             <p>
               <strong>{t('orders.status')}:</strong>{' '}
               {t(`orders.status.${selected.status}`)}
@@ -723,6 +762,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
               <strong>{t('orders.delivered')}:</strong> {formatNumber(selected.deliveredQuantity)} /{' '}
               {formatNumber(selected.quantity)}
             </p>
+            {selected.sourceDescription && <p>Kaynak: {selected.sourceDescription}</p>}
             {selected.notes && (
               <p>
                 <strong>{t('orders.note')}:</strong> {selected.notes}
@@ -802,6 +842,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                   style={{ display: 'grid', gap: 8 }}
                 >
                   <h3 style={{ margin: 0, fontSize: 15 }}>{t('orders.collection')}</h3>
+                  {paymentAccountField(collectionAccountId, setCollectionAccountId)}
                   <label>
                     {t('orders.amount')} (DZD)
                     <input
@@ -847,6 +888,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
                   style={{ display: 'grid', gap: 8 }}
                 >
                   <h3 style={{ margin: 0, fontSize: 15 }}>{t('orders.advance')}</h3>
+                  {paymentAccountField(advanceAccountId, setAdvanceAccountId)}
                   <label>
                     {t('orders.amount')} (DZD)
                     <input
@@ -959,7 +1001,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
               value={productId}
               onChange={(e) => { const id=e.target.value; setProductId(id); const p=products.find(x=>x.id===Number(id)); if(p){setUnit(p.unit); if(p.salePrice!=null)setUnitPrice(String(p.salePrice))} }}
             >
-              <option value="">{t('orders.legacyProduct')}</option>
+              <option value="">Ürün bağlantısı yok — serbest sipariş</option>
               {products.map(p=><option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
             </select>
           </label>
@@ -981,11 +1023,11 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
             />
           </label>
           <label>
-            {t('orders.quantity')}
+            {t('orders.quantity')} ({t(`requests.unit.${unit}`)})
             <input
               type="number"
               min={editing?.deliveredQuantity ? String(editing.deliveredQuantity) : '0.001'}
-              step="0.001"
+              step={unit === 'PIECE' ? '1' : '0.001'}
               required
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
@@ -995,7 +1037,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
             {t('orders.unit')}
             <select
               value={unit}
-              disabled={Boolean(editing && editing.deliveredQuantity > 0)}
+              disabled={Boolean(productId || (editing && editing.deliveredQuantity > 0))}
               onChange={(e) =>
                 setUnit(e.target.value as 'METER' | 'PIECE' | 'KILOGRAM')
               }
@@ -1006,7 +1048,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
             </select>
           </label>
           <label>
-            {t('orders.unitPriceDzd')}
+            {t('work.priceUnit', { unit: t(`requests.unit.${unit}`) })}
             <input
               type="number"
               min="0"
@@ -1028,6 +1070,8 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
               />
             </label>
           )}
+          {!editing && Number(advanceAmount) > 0 && paymentAccountField(initialAccountId, setInitialAccountId)}
+          <details><summary>{t('work.optional')}</summary>
           <label>
             {t('orders.width')}
             <input
@@ -1056,6 +1100,7 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
               onChange={(e) => setNotes(e.target.value)}
             />
           </label>
+          </details>
           {!editing && (
             <label>
               {t('orders.status')}
@@ -1162,3 +1207,4 @@ export function OrdersModule({ canWrite = false }: { canWrite?: boolean }) {
     </>
   )
 }
+

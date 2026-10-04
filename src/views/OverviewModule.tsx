@@ -1,69 +1,551 @@
-import { useEffect, useState } from 'react'
-import { ReportButton } from '../components/ReportButton'
-import { apiGet } from '../data/api'
-import { canAccessMenu, type AppUserRole } from '../data/roles'
-import { OrderOverview } from './OrderOverview'
-import type { MenuId } from '../data/types'
-import { useI18n } from '../i18n/I18nProvider'
-
-type Point = { date: string; value: number }
-type Dashboard = {
-  currency: string; date: string
-  kpis: { todayRevenue:number; estimatedGrossProfit:number; profitCoverage:number; expenses:number; cashBalance:number; totalReceivable:number; totalPayable:number; totalSupplierDebt?:number; overdueSupplierDebt?:number; stockValue:number; openOrders:number; overdueOrders:number; inProduction:number }
-  comparisons:{revenue30d:number|null;expense30d:number|null}
-  charts: { sales:Point[]; collections?:Point[]; cashFlow:Array<{date:string;income:number;expense:number}>; topProducts:Array<{name:string;value:number}> }
-  production:{completedToday:number;inProgress:number;completedQuantity:Record<string,number>}; alerts:Array<{severity:string;title:string;detail:string;target:'orders'|'inventory'}>; recent:Array<{id:string;at:string;type:string;title:string;amount:number;status:string}>; aiSummary:string
+import { useEffect, useState } from "react";
+import { BusinessPositionPanel } from "../components/BusinessPositionPanel";
+import { apiGet } from "../data/api";
+import { algiersYmd } from "../data/dates";
+import {
+  canAccessMenu,
+  canWriteFinance,
+  canWriteOrders,
+  type AppUserRole,
+} from "../data/roles";
+import {
+  calculateReservePlan,
+  reconcileLine,
+  validateReservePlan,
+  type ReservePlan,
+  type PlanData,
+} from "../data/reservePlan";
+import type { MenuId } from "../data/types";
+import { useI18n } from "../i18n/I18nProvider";
+import { markOpenOrderCreate } from "./orderActions";
+import {
+  markOpenFinanceCollection,
+  markOpenFinanceExpense,
+} from "./financeActions";
+import "./Workspace.css";
+interface Order {
+  id: number;
+  orderNumber: string;
+  customerName: string | null;
+  status: string;
+  quantity: number;
+  deliveredQuantity: number;
+  expectedDeliveryDate: string | null;
+}
+interface Account {
+  id: number;
+  name: string;
+  currency: string;
+  balance: number;
+  currentBalance?: number | string | null;
+}
+const accountMismatch = (account:Account) => account.currentBalance != null && Number.isFinite(Number(account.currentBalance)) && Math.abs(Number(account.currentBalance)-account.balance)>0.01;
+interface Snapshot {
+  plan: ReservePlan | null;
+  data: PlanData;
+  generatedAt?: string;
+}
+interface Flow {
+  currency: string;
+  expectedCollectionsNotice?: string;
+  expectedCollectionsReliable?: boolean;
+  calendar: Array<{
+    ledgerId: number;
+    supplierName: string;
+    amount: number;
+    dueDate: string;
+  }>;
+  expectedCollections: Array<{
+    customerId: number;
+    customerName: string;
+    amount: number;
+    dueDate: string;
+  }>;
+}
+interface Part<T> {
+  data: T | null;
+  failed: boolean;
+}
+function usePart<T>(
+  endpoint: string,
+  allowed: boolean,
+  revision: number,
+): Part<T> {
+  const [result, setResult] = useState<
+    Part<T> & { endpoint: string; revision: number }
+  >({ data: null, failed: false, endpoint: "", revision: -1 });
+  useEffect(() => {
+    if (!allowed) return;
+    let live = true;
+    apiGet<T>(endpoint)
+      .then((data) => {
+        const normalized =
+          endpoint === "/cash/summary" && Array.isArray(data)
+            ? { accounts: data }
+            : data;
+        const value = normalized as Record<string, unknown> | null;
+        const valid =
+          endpoint === "/orders"
+            ? Array.isArray(data)
+            : endpoint === "/cash/summary"
+              ? Array.isArray(value?.accounts)
+              : endpoint === "/cash-flow"
+                ? Array.isArray(value?.calendar) &&
+                  Array.isArray(value?.expectedCollections)
+                : Boolean(
+                    (value?.data as PlanData | undefined)?.accounts &&
+                    (value?.data as PlanData | undefined)?.movements,
+                  );
+        if (!valid) throw new Error("Incomplete response");
+        if (live)
+          setResult({
+            data: normalized as T,
+            failed: false,
+            endpoint,
+            revision,
+          });
+      })
+      .catch(() => {
+        if (live) setResult({ data: null, failed: true, endpoint, revision });
+      });
+    return () => {
+      live = false;
+    };
+  }, [endpoint, allowed, revision]);
+  return allowed && result.endpoint === endpoint && result.revision === revision
+    ? result
+    : { data: null, failed: false };
+}
+export function OverviewModule({
+  role,
+  onNavigate,
+}: {
+  role?: AppUserRole | null;
+  onNavigate?: (id: MenuId) => void;
+}) {
+  const { t, formatCurrency, formatDate, formatNumber } = useI18n();
+  const [revision, setRevision] = useState(0);
+  const ordersAllowed = Boolean(role) && canAccessMenu(role, "orders");
+  const financeAllowed = Boolean(role) && canAccessMenu(role, "finance");
+  const planAllowed = canWriteFinance(role);
+  const orders = usePart<Order[]>("/orders", ordersAllowed, revision);
+  const accounts = usePart<{ accounts: Account[] }>(
+    "/cash/summary",
+    financeAllowed,
+    revision,
+  );
+  const flow = usePart<Flow>("/cash-flow", financeAllowed, revision);
+  const snapshot = usePart<Snapshot>("/reserve-plan", planAllowed, revision);
+  useEffect(() => {
+    const timer = window.setInterval(() => setRevision((n) => n + 1), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const plan = snapshot.data?.plan ?? null;
+  const data = snapshot.data?.data;
+  const today = data?.today ?? algiersYmd();
+  const soon = new Date(new Date(`${today}T12:00:00Z`).getTime() + 7 * 86400000)
+    .toISOString()
+    .slice(0, 10);
+  const active = (Array.isArray(orders.data) ? orders.data : []).filter(
+    (o) =>
+      !["CANCELLED", "DELIVERED", "DRAFT"].includes(o.status) &&
+      o.quantity > o.deliveredQuantity,
+  );
+  const deliveries = [...active].sort((a, b) =>
+    (a.expectedDeliveryDate ?? "9999").localeCompare(
+      b.expectedDeliveryDate ?? "9999",
+    ),
+  );
+  const scenarios =
+    plan && data && !validateReservePlan(plan).length
+      ? (plan.insuranceMode === "unknown"
+          ? (["separate", "included"] as const)
+          : [plan.insuranceMode]
+        ).map((mode) => calculateReservePlan(plan, data, mode))
+      : [];
+  const finance = (tab: string) => {
+    try {
+      sessionStorage.setItem("velora.finance.tab", tab);
+    } catch {
+      /* optional preference */
+    }
+    onNavigate?.("finance");
+  };
+  const openOrder = (id: number) => {
+    try {
+      sessionStorage.setItem("velora.orders.selectedId", String(id));
+    } catch {
+      /* optional preference */
+    }
+    onNavigate?.("orders");
+  };
+  type Alert = {
+    id: string;
+    priority: number;
+    title: string;
+    detail: string;
+    action: () => void;
+    actionLabel: string;
+  };
+  const alerts: Alert[] = [];
+  for (const o of deliveries.filter(
+    (o) => o.expectedDeliveryDate && o.expectedDeliveryDate <= soon,
+  ))
+    alerts.push({
+      id: `order-${o.id}`,
+      priority: o.expectedDeliveryDate! < today ? 1 : 4,
+      title: `${o.orderNumber} · ${o.customerName ?? ""}`,
+      detail: `${formatDate(o.expectedDeliveryDate!)} · ${t(o.expectedDeliveryDate! < today ? "work.late" : "work.soon")} · ${t("work.deliveryAction")}`,
+      action: () => openOrder(o.id),
+      actionLabel: t("work.details"),
+    });
+  if (plan && data)
+    for (const l of plan.lines.filter(
+      (l) =>
+        l.kind === "insurance" &&
+        !l.deferred &&
+        reconcileLine(l, data).remaining > 0,
+    )) {
+      if (!l.date || l.date <= soon)
+        alerts.push({
+          id: l.id,
+          priority: !l.date ? 2 : l.date < today ? 0 : 3,
+          title: `${t("work.insurance")} · ${formatCurrency(reconcileLine(l, data).remaining, data.currency)}`,
+          detail: `${!l.date ? t("reserve.dueRequired") : formatDate(l.date) + " · " + t(l.date < today ? "work.late" : "work.soon")} · ${t("work.planAction")}`,
+          action: () => finance("reserve"),
+          actionLabel: t("work.openPlan"),
+        });
+    }
+  for (const r of scenarios.filter(
+    (r) => r.reliableOpening && (r.reserveNeed ?? 0) > 0,
+  ))
+    alerts.push({
+      id: `reserve-${r.mode}`,
+      priority: 1,
+      title: `${t("work.reserve")} · ${formatCurrency(r.reserveNeed!, data!.currency)}`,
+      detail: `${t(r.mode === "included" ? "reserve.text26" : "reserve.text27")} · ${t("work.planAction")}`,
+      action: () => finance("reserve"),
+      actionLabel: t("work.openPlan"),
+    });
+  for (const r of scenarios.filter(
+    (r) => r.reliableOpening && r.cashFundingGap > 0,
+  ))
+    alerts.push({
+      id: `cash-gap-${r.mode}`,
+      priority: 1,
+      title: `${t("reserve.text89")} · ${formatCurrency(r.cashFundingGap, data!.currency)}`,
+      detail: `${t(r.mode === "included" ? "reserve.text26" : "reserve.text27")} · ${t("work.planAction")}`,
+      action: () => finance("reserve"),
+      actionLabel: t("work.openPlan"),
+    });
+  for (const a of data?.accounts.filter((a) => a.balanceReview) ?? [])
+    alerts.push({
+      id: `account-${a.id}`,
+      priority: 2,
+      title: a.name,
+      detail: t("work.balanceReview"),
+      action: () => finance("cash"),
+      actionLabel: t("work.details"),
+    });
+  for (const a of accounts.data?.accounts.filter(accountMismatch) ?? []) {
+    if (!alerts.some(alert=>alert.id===`account-${a.id}`)) alerts.push({id:`account-${a.id}`,priority:2,title:a.name,detail:t('work.balanceReview'),action:()=>finance('cash'),actionLabel:t('work.details')});
+  }
+  for (const payment of flow.data?.calendar ?? [])
+    alerts.push({
+      id: `payment-${payment.ledgerId}`,
+      priority: payment.dueDate < today ? 1 : 4,
+      title: `${payment.supplierName} · ${formatCurrency(payment.amount, flow.data!.currency)}`,
+      detail: `${formatDate(payment.dueDate)} · ${t("work.planAction")}`,
+      action: () => finance("debts"),
+      actionLabel: t("work.details"),
+    });
+  const problem = (part: Part<unknown>) =>
+    part.failed ? (
+      <p role="alert">{t("work.unavailable")}</p>
+    ) : part.data === null ? (
+      <p role="status">{t("common.loading")}</p>
+    ) : null;
+  const failed =
+    orders.failed || accounts.failed || flow.failed || snapshot.failed;
+  const pending =
+    (ordersAllowed && !orders.data && !orders.failed) ||
+    (financeAllowed &&
+      ((!accounts.data && !accounts.failed) || (!flow.data && !flow.failed))) ||
+    (planAllowed && !snapshot.data && !snapshot.failed);
+  return (
+    <section className="workspace" aria-label={t("work.title")}>
+      {['OWNER','ADMIN','ACCOUNTING_OPERATIONS'].includes(role??'')&&<BusinessPositionPanel/>}
+      <header className="workspace__header">
+        <div>
+          <h1>{t("work.title")}</h1>
+          <p>{t("work.subtitle")}</p>
+        </div>
+        <button
+          className="btn btn--ghost"
+          onClick={() => setRevision((n) => n + 1)}
+        >
+          {t("work.refresh")}
+        </button>
+      </header>
+      <div className="workspace__actions">
+        {canWriteOrders(role) && (
+          <button
+            className="btn btn--primary"
+            onClick={() => {
+              markOpenOrderCreate();
+              onNavigate?.("orders");
+            }}
+          >
+            {t("work.order")}
+          </button>
+        )}
+        {canWriteFinance(role) && (
+          <>
+            <button
+              className="btn btn--primary"
+              onClick={() => {
+                markOpenFinanceCollection();
+                finance("cash");
+              }}
+            >
+              {t("work.collection")}
+            </button>
+            <button
+              className="btn btn--ghost"
+              onClick={() => {
+                markOpenFinanceExpense();
+                finance("cash");
+              }}
+            >
+              {t("work.expense")}
+            </button>
+          </>
+        )}
+      </div>
+      <article className="card workspace__section">
+        <h2>{t("work.priorities")}</h2>
+        <div className="workspace__alerts">{alerts
+          .sort((a, b) => a.priority - b.priority)
+          .map((a) => (
+            <div
+              key={a.id}
+              className={`workspace__alert ${a.priority < 2 ? "workspace__alert--critical" : ""}`}
+            >
+              <strong>{a.title}</strong>
+              <p>{a.detail}</p>
+              <button className="btn btn--ghost" onClick={a.action}>
+                {a.actionLabel}
+              </button>
+            </div>
+          ))}</div>
+        {!alerts.length && (
+          <p>
+            {failed
+              ? t("work.unavailable")
+              : pending
+                ? t("common.loading")
+                : t("work.noAlerts")}
+          </p>
+        )}
+      </article>
+      <div className="workspace__grid">
+        {ordersAllowed && (
+          <article className="card workspace__section">
+            <h2>{t("work.delivery")}</h2>
+            {problem(orders)}
+            {orders.data && (
+              <>
+                <button
+                  className="workspace__metric"
+                  onClick={() => onNavigate?.("orders")}
+                >
+                  {t("work.active")}
+                  <strong>{formatNumber(active.length)}</strong>
+                </button>
+                {deliveries.slice(0, 6).map((o) => (
+                  <button
+                    key={o.id}
+                    className="workspace__metric"
+                    onClick={() => openOrder(o.id)}
+                  >
+                    <span>
+                      {o.orderNumber} · {o.customerName}
+                    </span>
+                    <span>
+                      {o.expectedDeliveryDate
+                        ? formatDate(o.expectedDeliveryDate)
+                        : t("work.noDate")}{" "}
+                      · {formatNumber(o.quantity - o.deliveredQuantity)}
+                    </span>
+                  </button>
+                ))}
+                {!deliveries.length && <p>{t("work.emptyOrders")}</p>}
+              </>
+            )}
+          </article>
+        )}
+        {financeAllowed && (
+          <article className="card workspace__section">
+            <h2>{t("work.current")}</h2>
+            {problem(accounts)}
+            {accounts.data?.accounts.map((a) => (
+              <button
+                key={a.id}
+                className="workspace__metric"
+                onClick={() => {
+                  try {
+                    sessionStorage.setItem(
+                      "velora.finance.accountName",
+                      a.name,
+                    );
+                  } catch {
+                    /* optional preference */
+                  }
+                  finance("cash");
+                }}
+              >
+                <span>{a.name}</span>
+                <strong>
+                  {data?.accounts.find((item) => item.id === a.id)
+                    ?.balanceReview || accountMismatch(a) || !Number.isFinite(a.balance)
+                    ? t("work.unknown")
+                    : formatCurrency(a.balance, a.currency)}
+                </strong>
+                <span>{t("work.details")}</span>
+              </button>
+            ))}
+          </article>
+        )}
+      </div>
+      {planAllowed && (
+        <article className="card workspace__section">
+          <h2>{t("work.forecast")}</h2>
+          {problem(snapshot)}
+          {snapshot.data && !plan && <p>{t("work.noPlan")}</p>}
+          {plan && (
+            <>
+              <p>
+                {plan.month ?? t("work.noDate")} ·{" "}
+                {plan.reserve === null
+                  ? t("reserve.unset")
+                  : `${t("reserve.text31")}: ${formatCurrency(plan.reserve, data!.currency)}`}
+              </p>
+              <p>
+                {t("work.assumption")} ·{" "}
+                {t(
+                  plan.openingMode === "excluded"
+                    ? "reserve.text36"
+                    : plan.openingMode === "manual"
+                      ? "reserve.text37"
+                      : "reserve.text38",
+                )}
+              </p>
+            </>
+          )}
+          {scenarios.map((r) => (
+            <div className="workspace__scenario" key={r.mode}>
+              <h3>
+                {t(r.mode === "included" ? "reserve.text26" : "reserve.text27")}
+              </h3>
+              <div className="workspace__grid">
+                {[
+                  ["work.cash", r.cash],
+                  ["work.bank", r.bank],
+                  ["work.total", r.total],
+                ].map(([key, value]) => (
+                  <button
+                    key={key}
+                    className="workspace__metric"
+                    onClick={() => finance("reserve")}
+                  >
+                    <span>{t(String(key))}</span>
+                    <strong>
+                      {r.reliableOpening
+                        ? formatCurrency(Number(value), data!.currency)
+                        : t("work.unknown")}
+                    </strong>
+                  </button>
+                ))}
+              </div>
+              {(["collection", "payment"] as const).map((kind) => (
+                <details key={kind}>
+                  <summary>
+                    {t(
+                      kind === "collection" ? "work.expected" : "work.payments",
+                    )}{" "}
+                    ·{" "}
+                    {formatCurrency(
+                      kind === "collection" ? r.collections : r.outflows,
+                      data!.currency,
+                    )}
+                  </summary>
+                  {r.rows
+                    .filter(
+                      (l) =>
+                        l.active &&
+                        (kind === "collection"
+                          ? l.kind === "collection"
+                          : l.kind !== "collection" && l.kind !== "transfer"),
+                    )
+                    .map((l) => (
+                      <div className="workspace__row" key={l.id}>
+                        <span>
+                          {l.label}
+                          {l.assumption ? ` · ${t("work.assumption")}` : ""}
+                          <br />
+                          {l.date ? formatDate(l.date) : t("work.noDate")}
+                        </span>
+                        <strong>
+                          {formatCurrency(l.remaining, data!.currency)}
+                        </strong>
+                      </div>
+                    ))}
+                </details>
+              ))}
+              <button
+                className="btn btn--ghost"
+                onClick={() => finance("reserve")}
+              >
+                {t("work.openPlan")}
+              </button>
+            </div>
+          ))}
+          {plan && !scenarios.length && (
+            <p role="alert">
+              {t("work.unknown")} · {validateReservePlan(plan).join(" ")}
+            </p>
+          )}
+        </article>
+      )}
+      {financeAllowed && (
+        <article className="card workspace__section">
+          <h2>{t("work.expected")}</h2>
+          {problem(flow)}
+          {flow.data?.expectedCollectionsNotice && (
+            <p>{flow.data.expectedCollectionsNotice}</p>
+          )}
+          {flow.data?.expectedCollections.map((row, index) => (
+            <button
+              className="workspace__metric"
+              key={`${row.customerId}-${index}`}
+              onClick={() => finance("receivables")}
+            >
+              <span>
+                {row.customerName} ·{" "}
+                {row.dueDate ? formatDate(row.dueDate) : t("work.noDate")}
+              </span>
+              <strong>{formatCurrency(row.amount, flow.data!.currency)}</strong>
+              <span>{t("work.assumption")}</span>
+            </button>
+          ))}
+        </article>
+      )}
+      {snapshot.data?.generatedAt && (
+        <p className="workspace__tag">
+          {t("work.source")} · {formatDate(snapshot.data.generatedAt)} · ERP
+        </p>
+      )}
+    </section>
+  );
 }
 
-type NumberFormatter = (value: number, options?: Intl.NumberFormatOptions) => string
-type CurrencyFormatter = (value: number, currency?: string) => string
-
-const short = (v:number, formatNumber:NumberFormatter) => Math.abs(v)>=1_000_000 ? `${formatNumber(v/1_000_000,{maximumFractionDigits:1})}M` : Math.abs(v)>=1000 ? `${formatNumber(v/1000,{maximumFractionDigits:0})}K` : formatNumber(Math.round(v))
-
-function LineChart({ data, currency, ariaLabel, formatNumber }: { data:Point[]; currency:string; ariaLabel:string; formatNumber:NumberFormatter }) {
-  const w=720,h=230,p=32,max=Math.max(...data.map(d=>d.value),1)
-  const last = Math.max(data.length - 1, 1)
-  const points=data.map((d,i)=>`${p+(i/last)*(w-p*2)},${h-p-(d.value/max)*(h-p*2)}`).join(' ')
-  const ticks = data.filter((_, i) => i === 0 || i === last || (i % 7 === 0 && i < last - 3))
-  return <svg className="executive-chart" viewBox={`0 0 ${w} ${h}`} role="img" aria-label={ariaLabel}><defs><linearGradient id="salesFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#2563eb" stopOpacity=".28"/><stop offset="1" stopColor="#2563eb" stopOpacity="0"/></linearGradient></defs>{[0,.25,.5,.75,1].map(x=><g key={x}><line x1={p} x2={w-p} y1={p+x*(h-p*2)} y2={p+x*(h-p*2)} className="chart-grid"/><text x={p-5} y={p+x*(h-p*2)+4} textAnchor="end">{short(max*(1-x),formatNumber)}</text></g>)}<polygon points={`${p},${h-p} ${points} ${w-p},${h-p}`} fill="url(#salesFill)"/><polyline points={points} className="chart-line"/>{ticks.map((d,i)=><text key={d.date} x={p+(data.indexOf(d)/last)*(w-p*2)} y={h-8} textAnchor={i===0?'start':i===ticks.length-1?'end':'middle'}>{d.date.slice(5).split('-').reverse().join('.')}</text>)}<text x={w-8} y={14} textAnchor="end" className="chart-unit">{currency}</text></svg>
-}
-
-function CashChart({ data, ariaLabel }: { data:Dashboard['charts']['cashFlow']; ariaLabel:string }) {
-  const visible=data.slice(-14),w=720,h=230,p=32,max=Math.max(...visible.flatMap(d=>[d.income,d.expense]),1),group=(w-p*2)/Math.max(visible.length,1),bar=Math.max(4,group*.28)
-  return <svg className="executive-chart" viewBox={`0 0 ${w} ${h}`} role="img" aria-label={ariaLabel}>{[0,.5,1].map(x=><line key={x} x1={p} x2={w-p} y1={p+x*(h-p*2)} y2={p+x*(h-p*2)} className="chart-grid"/>)}{visible.map((d,i)=>{const x=p+i*group+group/2,ih=d.income/max*(h-p*2),eh=d.expense/max*(h-p*2);return <g key={d.date}><rect x={x-bar-1} y={h-p-ih} width={bar} height={ih} rx="3" className="bar-income"/><rect x={x+1} y={h-p-eh} width={bar} height={eh} rx="3" className="bar-expense"/>{i%3===0&&<text x={x} y={h-8} textAnchor="middle">{d.date.slice(8)}</text>}</g>})}</svg>
-}
-
-function ProductBars({ data, currency, formatCurrency, emptyLabel }: { data:Dashboard['charts']['topProducts'];currency:string;formatCurrency:CurrencyFormatter;emptyLabel:string }) { const max=Math.max(...data.map(d=>d.value),1); return <div className="product-bars">{data.length?data.map((d,i)=><div className="product-bar" key={`${d.name}-${i}`}><div><span>{d.name}</span><strong>{formatCurrency(d.value,currency)}</strong></div><div className="product-bar__track"><span style={{width:`${Math.max(4,d.value/max*100)}%`}}/></div></div>):<p className="empty-state">{emptyLabel}</p>}</div> }
-
-function ExecutiveOverview({ onNavigate }: { role?:AppUserRole|null; onNavigate?:(id:MenuId)=>void }) {
-  const { t, formatCurrency, formatDate, formatNumber } = useI18n()
-  const [data,setData]=useState<Dashboard|null>(null),[failed,setFailed]=useState(false),[loading,setLoading]=useState(true)
-  useEffect(()=>{let live=true; apiGet<Dashboard>('/dashboard/executive').then(r=>{if(live)setData(r)}).catch(()=>{if(live)setFailed(true)}).finally(()=>{if(live)setLoading(false)}); return()=>{live=false}},[])
-  const trendLabel=(value:number|null,reverse=false)=>value===null?t('overview.newPeriod'):`${value>0?'+':''}${formatNumber(value)}% ${reverse?(value<=0?t('overview.good'):t('overview.increase')):(value>=0?t('overview.increase'):t('overview.decrease'))}`
-  const kpis=data?[
-    {label:t('overview.todayRevenue'),value:formatCurrency(data.kpis.todayRevenue,data.currency),tone:'sales',meta:trendLabel(data.comparisons.revenue30d)},
-    {label:t('overview.estimatedGrossProfit'),value:formatCurrency(data.kpis.estimatedGrossProfit,data.currency),tone:'profit',meta:t('overview.costCoverage',{value:data.kpis.profitCoverage})},
-    {label:t('overview.todayExpense'),value:formatCurrency(data.kpis.expenses,data.currency),tone:'expense',meta:trendLabel(data.comparisons.expense30d,true)},
-    {label:t('overview.totalCash'),value:formatCurrency(data.kpis.cashBalance,data.currency),tone:'income',meta:t('overview.activeCashAccounts')},
-    {label:t('overview.customerReceivable'),value:formatCurrency(data.kpis.totalReceivable,data.currency),tone:'receivable',meta:t('overview.openLedgerBalance')},
-    {label:t('overview.companyPayable'),value:formatCurrency(data.kpis.totalPayable,data.currency),tone:'payable',meta:t('overview.creditLedgers')},
-    {label:t('overview.supplierDebt'),value:formatCurrency(data.kpis.totalSupplierDebt ?? 0,data.currency),tone:'payable',meta:t('overview.supplierRemaining')},
-    {label:t('overview.overdueDebt'),value:formatCurrency(data.kpis.overdueSupplierDebt ?? 0,data.currency),tone:data.kpis.overdueSupplierDebt?'danger':'payable',meta:t('overview.goodsReceiptDueDates')},
-    {label:t('overview.stockValue'),value:formatCurrency(data.kpis.stockValue,data.currency),tone:'stock',meta:t('overview.movementCosts')},
-    {label:t('overview.overdueOrders'),value:formatNumber(data.kpis.overdueOrders),tone:data.kpis.overdueOrders?'danger':'orders',meta:t('overview.openOrdersCount',{value:formatNumber(data.kpis.openOrders)})},
-  ]:[]
-  if(loading)return <div className="executive-loading">{t('overview.loading')}</div>
-  if(failed||!data)return <p className="demo-notice" role="alert">{failed?t('overview.loadError'):t('overview.noData')}</p>
-  return <div className="executive-dashboard">
-    <div className="executive-heading"><div><span className="executive-eyebrow">{t('overview.cockpit')} · {formatDate(`${data.date}T12:00:00`)}</span><h1>{t('overview.headline')}</h1><p>{t('overview.description')}</p></div><ReportButton type="daily-summary" label={t('overview.dailyReport')}/></div>
-    <section className="executive-kpis">{kpis.map(k=><article className={`executive-kpi executive-kpi--${k.tone}`} key={k.label}><span>{k.label}</span><strong>{k.value}</strong><small>{k.meta}</small></article>)}</section>
-    <section className="executive-operation-strip"><div><span>{t('overview.inProduction')}</span><strong>{formatNumber(data.kpis.inProduction)}</strong><small>{t('overview.activeJobs')}</small></div><div><span>{t('overview.completedToday')}</span><strong>{formatNumber(data.production.completedToday)}</strong><small>{t('overview.productionOrder')}</small></div><div><span>{t('overview.openOrders')}</span><strong>{formatNumber(data.kpis.openOrders)}</strong><small>{t('overview.tracked')}</small></div><div className={data.kpis.overdueOrders?'is-critical':''}><span>{t('overview.overdue')}</span><strong>{formatNumber(data.kpis.overdueOrders)}</strong><small>{t('overview.actionRequired')}</small></div></section>
-    <section className="executive-charts"><article className="executive-panel executive-panel--wide"><header><div><span>{t('overview.customerCollections')}</span><h2>{t('overview.collectionTrend')}</h2></div><strong>{formatCurrency((data.charts.collections ?? data.charts.sales).reduce((s,d)=>s+d.value,0),data.currency)}</strong></header><LineChart data={data.charts.collections ?? data.charts.sales} currency={data.currency} ariaLabel={t('overview.collectionChart')} formatNumber={formatNumber}/></article><article className="executive-panel"><header><div><span>{t('overview.cashMovement')}</span><h2>{t('overview.collectionsExpenses')}</h2></div><div className="chart-legend"><i className="legend-income"/>{t('overview.collection')} <i className="legend-expense"/>{t('overview.expense')}</div></header><CashChart data={data.charts.cashFlow} ariaLabel={t('overview.cashChart')}/></article><article className="executive-panel"><header><div><span>{t('overview.productPerformance')}</span><h2>{t('overview.topProducts')}</h2></div></header><ProductBars data={data.charts.topProducts} currency={data.currency} formatCurrency={formatCurrency} emptyLabel={t('overview.noProductSales')}/></article></section>
-    <section className="executive-bottom"><article className="executive-panel"><header><div><span>{t('overview.liveFlow')}</span><h2>{t('overview.recentActivity')}</h2></div></header><div className="activity-list">{data.recent.map(r=><button key={r.id} type="button" onClick={()=>onNavigate?.(r.type==='Sipariş'?'orders':r.type==='Gider'||r.type==='Tahsilat'?'finance':'overview')}><span className={`activity-dot activity-dot--${r.type.toLocaleLowerCase('tr-TR')}`}/><span><strong>{r.title}</strong><small>{r.type} · {formatDate(r.at)}</small></span><b className={r.amount<0?'negative':''}>{formatCurrency(r.amount,data.currency)}</b></button>)}</div></article><article className="executive-panel"><header><div><span>{t('overview.needsAttention')}</span><h2>{t('overview.managementAlerts')}</h2></div><b className="alert-count">{formatNumber(data.alerts.length)}</b></header><div className="alert-list">{data.alerts.length?data.alerts.map((a,i)=><button key={i} className={a.severity==='critical'?'is-critical':''} onClick={()=>onNavigate?.(a.target)}><span>!</span><div><strong>{a.title}</strong><small>{a.detail}</small></div></button>):<p className="empty-state">{t('overview.noCriticalAlerts')}</p>}</div></article></section>
-    <section className="ai-daily-summary"><div className="ai-daily-summary__mark">V</div><div><span>{t('overview.aiSummary')}</span><h2>{data.aiSummary}</h2><p>{t('overview.source',{date:formatDate(`${data.date}T12:00:00`)})}</p></div><button onClick={()=>document.querySelector<HTMLTextAreaElement>('.ai-command__input')?.focus()}>{t('overview.askVexor')}</button></section>
-  </div>
-}
-
-export function OverviewModule({ role, onNavigate }: { role?:AppUserRole|null; onNavigate?:(id:MenuId)=>void }) {
-  return canAccessMenu(role, 'orders') ? <OrderOverview onNavigate={onNavigate} /> : <ExecutiveOverview onNavigate={onNavigate} />
-}

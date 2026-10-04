@@ -6,7 +6,7 @@ import { useI18n } from '../i18n/I18nProvider'
 import { StatusBadge } from '../components/StatusBadge'
 
 type OrderSummaryRow = {
-  id: number; orderNumber: string; customerName: string | null; productName: string | null
+  lineDescription?: string; sourceDescription?: string | null; id: number; orderNumber: string; customerName: string | null; productName: string | null
   quantity: number; unit: 'PIECE' | 'METER' | 'KILOGRAM'; unitPrice: number; grossTotal: number
   currency: string; status: string; orderDate: string; expectedDeliveryDate: string | null
   deliveredQuantity?: number; notes: string | null
@@ -34,7 +34,6 @@ export function OrderOverview({ onNavigate }: { onNavigate?: (id: MenuId) => voi
   const refresh = () => { setLoading(true); setRevision((value) => value + 1) }
   const pending = orders.filter(isPending)
   const overdue = pending.filter((order) => isOverdue(order, today))
-  const todayOrders = orders.filter((order) => order.status !== 'CANCELLED' && order.orderDate.slice(0, 10) === today)
   const totals = pending.reduce<Record<string, number>>((result, order) => {
     result[order.currency] = (result[order.currency] ?? 0) + order.grossTotal
     return result
@@ -52,10 +51,7 @@ export function OrderOverview({ onNavigate }: { onNavigate?: (id: MenuId) => voi
       <div className="order-overview__actions"><button className="btn btn--ghost" type="button" disabled={loading} onClick={refresh}>{t('orderOverview.refresh')}</button>{onNavigate && <button type="button" className="btn btn--primary" onClick={() => onNavigate('orders')}>{t('orderOverview.manage')}</button>}</div>
     </header>
     {failed ? <div className="demo-notice" role="alert">{t('orders.loadError')}</div> : loading ? <p role="status">{t('common.loading')}</p> : <>
-      <div className="order-overview__metrics">
-        <article><span>{t('orderOverview.today')}</span><strong>{formatNumber(todayOrders.length)}</strong></article>
-        <article><span>{t('orderOverview.pending')}</span><strong>{formatNumber(pending.length)}</strong></article>
-        <article className={overdue.length ? 'is-critical' : ''}><span>{t('orderOverview.overdue')}</span><strong>{formatNumber(overdue.length)}</strong></article>
+      <div className="order-overview__metrics order-overview__metrics--single">
         <article><span>{t('orderOverview.total')}</span>{Object.entries(totals).length ? Object.entries(totals).map(([currency, total]) => <strong key={currency}>{formatCurrency(total, currency)}</strong>) : <strong>—</strong>}</article>
       </div>
       {overdue.length > 0 && <p className="order-overview__warning" role="status">{t('orderOverview.overdueNotice', { count: overdue.length })}</p>}
@@ -68,7 +64,7 @@ export function OrderOverview({ onNavigate }: { onNavigate?: (id: MenuId) => voi
           const remaining = Math.max(0, order.quantity - (order.deliveredQuantity ?? 0))
           const pendingDelivery = isPending(order)
           return <article key={order.id} className={`order-overview__card ${isOverdue(order, today) ? 'order-overview__card--overdue' : ''}`}>
-            <header><div><span>{order.orderNumber}</span><h2 dir="auto">{order.productName || t('orders.noLinkedProduct')}</h2><p dir="auto">{order.customerName || '—'}</p></div><StatusBadge status={t(`orders.status.${order.status}`)} /></header>
+            <header><div><span>{order.orderNumber}</span><h2 dir="auto">{order.lineDescription || order.productName || t('orders.noLinkedProduct')}</h2><p dir="auto">{order.customerName || '—'}</p></div><StatusBadge status={t(`orders.status.${order.status}`)} /></header>
             <p className="order-overview__calculation"><strong>{formatNumber(order.quantity)} {t(`orderOverview.unit.${order.unit}`)}</strong><span>× {formatCurrency(order.unitPrice, order.currency)}</span></p>
             <div className="order-overview__total"><span>{t('orders.total')}</span><strong>{formatCurrency(order.grossTotal, order.currency)}</strong></div>
             <dl><div><dt>{t('orders.orderDate')}</dt><dd>{formatDate(order.orderDate)}</dd></div><div><dt>{t('orders.expectedDelivery')}</dt><dd>{order.expectedDeliveryDate ? formatDate(order.expectedDeliveryDate) : t('orderOverview.noDate')}</dd></div></dl>

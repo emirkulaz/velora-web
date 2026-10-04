@@ -7,7 +7,7 @@ export const aiCommandTranslations = {
     'ai.greetingNamed': 'Nasıl gidiyor, {name}?',
     'ai.greeting': 'Bugün nasıl yardımcı olabilirim?',
     'ai.subtitle':
-      'Doğal dille sorun; VEXOR şirket verinizden tool ile cevaplar, yazmalarda onay ister.',
+      'Şirketiniz hakkında soru sorun veya bilgileri girerek sipariş taslağı hazırlayın. Kayıtlar onayınızla uygulanır.',
     'ai.suggest.cash': 'Kasada ne kadar para var?',
     'ai.suggest.collections': 'Bugün ne kadar tahsilat yaptık?',
     'ai.suggest.stock': 'Stok durumu nedir?',
@@ -61,6 +61,7 @@ export const aiCommandTranslations = {
     'ai.error.unavailable':
       'AI asistanına şu anda ulaşılamıyor. Lütfen daha sonra tekrar deneyin.',
     'ai.error.invalid': 'Geçersiz soru. Lütfen metni kontrol edin.',
+    'ai.error.tooLong': 'Mesaj en fazla 20000 karakter olabilir. Metin kesilmedi.',
     'ai.error.generic': 'Yanıt alınamadı. Lütfen daha sonra tekrar deneyin.',
     'ai.confidence.VERIFIED': 'Doğrulandı',
     'ai.confidence.PARTIAL': 'Kısmi',
@@ -128,6 +129,7 @@ export const aiCommandTranslations = {
     'ai.error.rateLimit': 'Trop de requêtes. Réessayez dans une minute.',
     'ai.error.unavailable': 'L’assistant IA est indisponible. Réessayez plus tard.',
     'ai.error.invalid': 'Question non valide. Vérifiez le texte.',
+    'ai.error.tooLong': 'Le message ne peut pas dépasser 20000 caractères. Le texte a été conservé.',
     'ai.error.generic': 'Aucune réponse reçue. Réessayez plus tard.',
     'ai.confidence.VERIFIED': 'Vérifié',
     'ai.confidence.PARTIAL': 'Partiel',
@@ -193,6 +195,7 @@ export const aiCommandTranslations = {
     'ai.error.rateLimit': 'Too many requests. Please try again in one minute.',
     'ai.error.unavailable': 'The AI assistant is unavailable. Please try again later.',
     'ai.error.invalid': 'Invalid question. Check the text.',
+    'ai.error.tooLong': 'Messages may contain at most 20000 characters. The text was preserved.',
     'ai.error.generic': 'No response was received. Please try again later.',
     'ai.confidence.VERIFIED': 'Verified',
     'ai.confidence.PARTIAL': 'Partial',

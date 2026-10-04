@@ -102,4 +102,8 @@ describe('central API client', () => {
     ).rejects.toMatchObject({ status: 0 })
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
+  it('turns technical validation messages into a correction the user can make',async()=>{
+    vi.spyOn(window,'fetch').mockResolvedValue(new Response(JSON.stringify({message:['amount must be a number conforming to the specified constraints']}),{status:400,headers:{'Content-Type':'application/json'}}))
+    await expect(apiPublicPost('/cash/collections',{})).rejects.toMatchObject({message:'Tutar ve miktar alanlarını kontrol edin. Geçerli bir sayı girin.'})
+  })
 })
