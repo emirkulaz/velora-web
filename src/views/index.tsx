@@ -22,6 +22,7 @@ const CustomerRequestsModule = lazy(() => import('./CustomerRequestsModule').the
 const CustomersModule = lazy(() => import('./CustomersModule').then((m) => ({ default: m.CustomersModule })))
 const FinanceAiModule = lazy(() => import('./FinanceAiModule').then((m) => ({ default: m.FinanceAiModule })))
 const FinanceModule = lazy(() => import('./FinanceModule').then((m) => ({ default: m.FinanceModule })))
+const InvoicesModule = lazy(() => import('./InvoicesModule').then((m) => ({ default: m.InvoicesModule })))
 const InventoryModule = lazy(() => import('./InventoryModule').then((m) => ({ default: m.InventoryModule })))
 const OrdersModule = lazy(() => import('./OrdersModule').then((m) => ({ default: m.OrdersModule })))
 const OverviewModule = lazy(() => import('./OverviewModule').then((m) => ({ default: m.OverviewModule })))
@@ -86,6 +87,8 @@ export function renderModule(
       return <CostCalculationModule canWrite={canWriteProduction(role)} />
     case 'finance':
       return <FinanceModule canWrite={canWriteFinance(role)} />
+    case 'invoices':
+      return <InvoicesModule role={role} />
     case 'financeAi':
       return <FinanceAiModule />
     case 'users':

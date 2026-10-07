@@ -31,6 +31,7 @@ const ALL_MENUS: MenuId[] = [
   'production',
   'costCalculation',
   'finance',
+  'invoices',
   'financeAi',
   'users',
 ]

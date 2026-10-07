@@ -57,6 +57,7 @@ interface WritePreviewState {
 }
 
 interface ErpChatResponse {
+  applied?: boolean;
   data?: { documentImportId?: string; dailyEntry?: DailyReview; businessReport?: { records: BusinessRecord[]; totalRecords:number } }
   answer: string
   intent?: string
@@ -124,10 +125,12 @@ export function AiCommandPanel({
   userName,
   userRole,
   onRefresh,
+  documentsOpen = false,
 }: {
   userName?: string
   userRole?: AppUserRole | null
   onRefresh?: () => void
+  documentsOpen?: boolean
 }) {
   const { t, formatDate, formatNumber, locale, language } = useI18n()
   const labels = aiWorkspaceLabels[language ?? 'tr']
@@ -139,7 +142,13 @@ export function AiCommandPanel({
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [evidenceOpen, setEvidenceOpen] = useState(false)
-  const [quickOpen, setQuickOpen] = useState(false)
+  const [quickOpen, setQuickOpen] = useState(documentsOpen)
+  const [draftDirty, setDraftDirty] = useState(false)
+  const handleDraftDirty = (dirty: boolean) => {
+    setDraftDirty(dirty)
+    if (dirty) setResponse(current => current ? { ...current, writePreview: undefined } : current)
+  }
+  const [documentRevision, setDocumentRevision] = useState(0)
   const [documentImportId,setDocumentImportId]=useState<string>()
   const [dailyEntry,setDailyEntry]=useState<DailyReview>()
   const [businessReport,setBusinessReport]=useState<{records:BusinessRecord[];totalRecords:number}>()
@@ -216,6 +225,7 @@ export function AiCommandPanel({
   })
 
   const sendMessage = async (raw: string, requestedRange = aiPeriodRange(period, customRange)) => {
+    if (draftDirty) { setError('Düzenlediğiniz alanları önce “Kontrol et ve önizle” ile doğrulayın.'); return }
     const trimmed = raw.trim()
     if (!trimmed || requestBusyRef.current || confirming) return
     if (!validAiDateRange(requestedRange)) {
@@ -254,8 +264,9 @@ export function AiCommandPanel({
       setCommandInput('')
       setResponse(mapResponse(trimmed, data))
       setDailyEntry(data.data?.dailyEntry)
+      if (data.applied) onRefresh?.()
       setBusinessReport(data.data?.businessReport)
-      if(data.data?.documentImportId){setDocumentImportId(data.data.documentImportId);setQuickOpen(true)}
+      if(data.data?.documentImportId){setDocumentImportId(data.data.documentImportId);setDocumentRevision(v=>v+1);setQuickOpen(true)}
     } catch (err) {
       setFailedQuery({ message: trimmed, range: { ...requestedRange } })
       setError(mapErrorMessage(err, t))
@@ -266,6 +277,7 @@ export function AiCommandPanel({
   }
 
   const handleCommandSubmit = async () => {
+    if (draftDirty) { setError('Düzenlediğiniz alanları önce “Kontrol et ve önizle” ile doğrulayın.'); return }
     await sendMessage(commandInput)
   }
 
@@ -274,6 +286,7 @@ export function AiCommandPanel({
   }
 
   const handleConfirmWrite = async () => {
+    if (draftDirty) { setError('Düzenlediğiniz alanları önce “Kontrol et ve önizle” ile doğrulayın.'); return }
     const token = response?.writePreview?.previewToken
     if (!token || confirming || requestBusyRef.current) return
     setConfirming(true)
@@ -404,9 +417,9 @@ export function AiCommandPanel({
         </div>
       </div>
       <div className="ai-workspace__composer-help"><span>{labels.keyboard}</span><span>{commandInput.length}/{AI_COMMAND_LIMIT}</span></div>
-      {dailyEntry&&<DailyEntryPanel key={dailyEntry.draft.sourceText} initial={dailyEntry} onRefresh={onRefresh}/>}
+      {dailyEntry&&<DailyEntryPanel key={`${dailyEntry.draft.sourceText}:${dailyEntry.previewToken ?? 'draft'}`} initial={dailyEntry} onRefresh={onRefresh} onDirtyChange={handleDraftDirty}/>}
       {businessReport&&<details><summary>Yanıtın kaynak kayıtları ({businessReport.records.length}/{businessReport.totalRecords})</summary><BusinessRecords rows={businessReport.records}/></details>}
-      {canWriteFinance(userRole) && <div hidden={!quickOpen}><AiDocumentImport documentId={documentImportId} onRefresh={onRefresh} textInput={commandInput} driveLink={commandInput.match(/https:\/\/drive\.google\.com\/\S+/i)?.[0]} /></div>}
+      {canWriteFinance(userRole) && <div hidden={!quickOpen}><AiDocumentImport conversationId={conversationId} documentRevision={documentRevision} onDirtyChange={handleDraftDirty} documentId={documentImportId} onRefresh={onRefresh} textInput={commandInput} driveLink={commandInput.match(/https:\/\/drive\.google\.com\/\S+/i)?.[0]} /></div>}
 
       {spellingSuggestion && !loading && (
         <button type="button" className="quick-chip" disabled={confirming}

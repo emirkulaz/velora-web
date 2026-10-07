@@ -20,6 +20,7 @@ export const menuItems: MenuItem[] = [
   { id: 'production', label: 'Üretim', icon: 'factory' },
   { id: 'costCalculation', label: 'Maliyet Hesaplama', icon: 'calculator' },
   { id: 'finance', label: 'Finans', icon: 'chart' },
+  { id: 'invoices', label: 'Faturalar', icon: 'cart' },
   { id: 'financeAi', label: 'Finans Asistanı', icon: 'spark' },
   { id: 'users', label: 'Çalışanlar', icon: 'users' },
   { id: 'userManagement', label: 'Kullanıcı Yönetimi', icon: 'users' },
@@ -48,7 +49,7 @@ export const menuGroups: MenuGroup[] = [
   {
     id: 'finance',
     labelKey: 'nav.group.finance',
-    items: ['finance', 'financeAi'],
+    items: ['finance', 'invoices', 'financeAi'],
   },
   {
     id: 'management',

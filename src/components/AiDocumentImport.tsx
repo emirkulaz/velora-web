@@ -21,7 +21,7 @@ type Result = { answer: string; applied: boolean; data?: { results: { key: strin
 const kindLabels: Record<Kind, string> = { unknown: 'Belge türünü seçin', cash: 'Kasa hareketleri', customer_ledger: 'Müşteri carisi', supplier_ledger: 'Tedarikçi carisi', invoice: 'Fatura', delivery: 'Teslimat', stock: 'Stok', order: 'Sipariş' }
 const statusLabels: Record<string, string> = { added: 'Eklendi', updated: 'Düzeltildi', skipped: 'Atlandı', failed: 'Başarısız' }
 
-export function AiDocumentImport({ onRefresh, driveLink, textInput, documentId }: { onRefresh?: () => void; driveLink?: string; textInput?: string; documentId?: string }) {
+export function AiDocumentImport({ onRefresh, driveLink, textInput, documentId, conversationId, documentRevision, onDirtyChange }: { onRefresh?: () => void; driveLink?: string; textInput?: string; documentId?: string; conversationId?: string; documentRevision?: number; onDirtyChange?: (dirty: boolean) => void }) {
   const [document, setDocument] = useState<DocumentState | null>(null)
   const [url, setUrl] = useState(driveLink ?? '')
   const [busy, setBusy] = useState(false)
@@ -31,7 +31,7 @@ export function AiDocumentImport({ onRefresh, driveLink, textInput, documentId }
   const [sheet, setSheet] = useState('')
   const [page, setPage] = useState(0)
   const busyRef = useRef(false)
-  useEffect(()=>{if(!documentId)return;let cancelled=false;void apiGet<DocumentState>(`/ai/documents/${documentId}`).then(next=>{if(!cancelled){setDocument(next);setResult(null)}}).catch(err=>{if(!cancelled)setError(err instanceof Error?err.message:'Sipariş önizlemesi alınamadı.')});return()=>{cancelled=true}},[documentId])
+  useEffect(()=>{if(!documentId)return;let cancelled=false;void apiGet<DocumentState>(`/ai/documents/${documentId}`).then(next=>{if(!cancelled){setDocument(next);setResult(null)}}).catch(err=>{if(!cancelled)setError(err instanceof Error?err.message:'Belge önizlemesi alınamadı.')});return()=>{cancelled=true}},[documentId, documentRevision])
   useEffect(() => { if (driveLink) setUrl(driveLink) }, [driveLink])
   useEffect(() => {
     if (document?.draft.status !== 'processing') return
@@ -53,18 +53,18 @@ export function AiDocumentImport({ onRefresh, driveLink, textInput, documentId }
   const upload = (file?: File) => {
     if (!file) return
     void run(async () => {
-      if (!/\.(xlsx?|pdf|jpe?g|png)$/i.test(file.name) || file.size > 20 * 1024 * 1024) throw new Error('Excel, PDF, JPG veya PNG seçin (en fazla 20 MB).')
-      const body = new FormData(); body.append('file', file)
+      if (!/\.(xlsx?|pdf|jpe?g|png|txt)$/i.test(file.name) || file.size > 20 * 1024 * 1024) throw new Error('Excel, PDF, JPG, PNG veya TXT seçin (en fazla 20 MB).')
+      const body = new FormData(); body.append('file', file); if (conversationId) body.append('conversationId', conversationId)
       const next = await apiRequest<DocumentState>('/ai/documents/upload', { method: 'POST', body })
-      setDocument(next); setResult(null); setSheet(''); setPage(0)
+      setDocument(next); setResult(null); setSheet(''); setPage(0); onDirtyChange?.(false)
     })
   }
-  const editDraft = (patch: Partial<Draft>) => { setDocument(current => current ? { ...current, draft: { ...current.draft, ...patch }, writePreview: undefined } : current); setResult(null) }
+  const editDraft = (patch: Partial<Draft>) => { onDirtyChange?.(true); setDocument(current => current ? { ...current, draft: { ...current.draft, ...patch }, writePreview: undefined } : current); setResult(null) }
   const editRow = (key: string, patch: Partial<Row>) => { if (document) editDraft({ rows: document.draft.rows.map(row => row.key === key ? { ...row, ...patch } : row) }) }
   const review = () => void run(async () => {
     if (!document) return
-    const next = await apiPost<DocumentState>(`/ai/documents/${document.id}/preview`, { version: document.version, draft: document.draft })
-    setDocument(next); setResult(null)
+    const next = await apiPost<DocumentState>(`/ai/documents/${document.id}/preview`, { version: document.version, draft: document.draft, conversationId })
+    setDocument(next); setResult(null); onDirtyChange?.(false)
   })
   const confirm = () => void run(async () => {
     if (!document?.writePreview?.ready) return
@@ -82,9 +82,9 @@ export function AiDocumentImport({ onRefresh, driveLink, textInput, documentId }
     <p>Belge AI okuma servisine gönderilir. Kayıtlar yalnızca tabloyu kontrol edip onayladığınızda aktarılır.</p>
     <fieldset disabled={busy || draft?.status === 'processing'} className="ai-document__upload">
       <label>Dosya yükle<input type="file" accept="application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png,.xlsx,.xls,.txt,text/plain" onChange={e => { upload(e.target.files?.[0]); e.target.value = '' }} /></label>
-      {!!textInput?.trim() && <button type="button" className="btn btn--ghost" onClick={() => void run(async () => { if(textInput.length>20000) throw new Error('Metin en fazla 20000 karakter olabilir; metin kesilmedi.'); const next=await apiPost<DocumentState>('/ai/documents/text',{text:textInput});setDocument(next);setResult(null);setPage(0);setSheet('') })}>Sohbetteki metni kayıt tablosuna dönüştür</button>}
+      {!!textInput?.trim() && <button type="button" className="btn btn--ghost" onClick={() => void run(async () => { if(textInput.length>20000) throw new Error('Metin en fazla 20000 karakter olabilir; metin kesilmedi.'); const next=await apiPost<DocumentState>('/ai/documents/text',{text:textInput,conversationId});setDocument(next);setResult(null);setPage(0);setSheet('') })}>Sohbetteki metni kayıt tablosuna dönüştür</button>}
       <label>Google Drive bağlantısı<input type="url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://drive.google.com/file/d/…" /></label>
-      <button type="button" className="btn btn--ghost" disabled={!url.trim()} onClick={() => void run(async () => { const next = await apiPost<DocumentState>('/ai/documents/drive', { url: url.trim() }); setDocument(next); setResult(null) })}>İzin verilen bağlantıyı oku</button>
+      <button type="button" className="btn btn--ghost" disabled={!url.trim()} onClick={() => void run(async () => { const next = await apiPost<DocumentState>('/ai/documents/drive', { url: url.trim(), conversationId }); setDocument(next); setResult(null) })}>İzin verilen bağlantıyı oku</button>
     </fieldset>
     {error && <p role="alert">{error}</p>}
     {draft?.status === 'processing' && <p role="status">Belgenin bütün sayfaları okunuyor… Bu işlem birkaç dakika sürebilir.</p>}

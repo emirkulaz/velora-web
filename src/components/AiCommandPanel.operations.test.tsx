@@ -6,6 +6,7 @@ vi.mock('../data/api', () => ({ apiGet: vi.fn().mockResolvedValue([]), ApiError:
 vi.mock('../i18n/I18nProvider', () => ({ useI18n: () => ({ t: (key: string) => key, formatDate: (value: string) => value }) }))
 vi.mock('../hooks/useSpeechToText', () => ({ useSpeechToText: () => ({ isSupported: false, isListening: false }) }))
 const reply = { answer: 'Result', generatedAt: '2026-09-14', dataFreshness: '2026-09-14' }
+const collection = { draft: { kind: 'collection', sourceText: "Yacine'den 294.000 dinar para geldi", amount: 294000, date: '2026-10-06', currency: 'DZD' }, title: 'Müşteri tahsilatı', fields: ['amount'], choices: {}, errors: [], lines: ['Yacine 294000 DZD'], ready: true }
 beforeEach(() => { apiRequest.mockReset(); apiPost.mockReset() })
 afterEach(cleanup)
 it('preserves overlong input and accepts commands up to 20000 characters', async () => {
@@ -22,6 +23,25 @@ it('preserves overlong input and accepts commands up to 20000 characters', async
   fireEvent.keyDown(input, { key: 'Enter', shiftKey: false })
   await screen.findByText('Result')
   expect(JSON.parse(apiRequest.mock.calls[0][1].body).message).toHaveLength(20000)
+})
+it('renders the next chat preview and blocks confirmation of unreviewed edits', async () => {
+  apiRequest.mockResolvedValueOnce({ ...reply, data: { dailyEntry: collection } }).mockResolvedValueOnce({ ...reply, data: { dailyEntry: { ...collection, previewToken: 'collection-token' } } })
+  render(<AiCommandPanel />)
+  const input = screen.getByRole('textbox')
+  fireEvent.change(input, { target: { value: collection.draft.sourceText } })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  await screen.findByRole('heading', { name: 'Müşteri tahsilatı' })
+  expect(screen.getByRole('button', { name: 'Onayla ve kaydet' })).toBeDisabled()
+  fireEvent.change(input, { target: { value: 'bunu işle' } })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Onayla ve kaydet' })).toBeEnabled())
+  expect(JSON.parse(apiRequest.mock.calls[1][1].body).conversationId).toBe(JSON.parse(apiRequest.mock.calls[0][1].body).conversationId)
+  fireEvent.change(screen.getByLabelText('Tutar / kaynak toplamı'), { target: { value: '300000' } })
+  fireEvent.change(input, { target: { value: 'Onayla' } })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  expect(apiRequest).toHaveBeenCalledTimes(2)
+  expect(apiPost).not.toHaveBeenCalled()
+  expect(screen.getByText('Düzenlediğiniz alanları önce “Kontrol et ve önizle” ile doğrulayın.')).toBeInTheDocument()
 })
 async function send() {
   fireEvent.change(screen.getByRole('textbox'), { target: { value: 'stok girişi yap' } })

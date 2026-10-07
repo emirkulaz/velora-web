@@ -60,9 +60,11 @@ const labels: Record<string, string> = {
 export function DailyEntryPanel({
   initial,
   onRefresh,
+  onDirtyChange,
 }: {
   initial: DailyReview;
   onRefresh?: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [review, setReview] = useState(initial),
     [busy, setBusy] = useState(false),
@@ -70,6 +72,7 @@ export function DailyEntryPanel({
     [result, setResult] = useState(""),
     [confirmOpen, setConfirmOpen] = useState(false);
   const edit = (key: string, value: string | number | undefined) => {
+    onDirtyChange?.(true);
     setReview((r) => ({
       ...r,
       draft: { ...r.draft, [key]: value },
@@ -83,6 +86,7 @@ export function DailyEntryPanel({
     setError("");
     try {
       setReview(await apiPost<DailyReview>("/ai/daily/preview", review.draft));
+      onDirtyChange?.(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Önizleme oluşturulamadı.");
     } finally {

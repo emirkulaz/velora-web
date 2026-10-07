@@ -10,6 +10,7 @@ export type MenuId =
   | 'production'
   | 'costCalculation'
   | 'finance'
+  | 'invoices'
   | 'financeAi'
   | 'users'
   | 'userManagement'
